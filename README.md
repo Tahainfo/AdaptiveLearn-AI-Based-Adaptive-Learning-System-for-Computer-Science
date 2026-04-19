@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # 🎓 Adaptive Learning System for Moroccan High School Students
 
 An AI-powered intelligent learning platform that adapts to student mastery levels and provides personalized exercises for **Algorithmics** and **Networks** education.
@@ -431,3 +432,7 @@ For issues, questions, or improvements:
 ---
 
 **Happy Learning! 🚀**
+=======
+# AdaptiveLearn-AI-Based-Adaptive-Learning-System-for-Computer-Science
+AdaptiveLearn is an intelligent educational platform designed to personalize learning in computer science for high school students.  The system combines diagnostic assessment, mistake analysis, and AI-generated exercises to adapt learning paths based on each student’s level and weaknesses.
+>>>>>>> c05abf5ee51f033098ddb5b3e5b04650579b59e7
