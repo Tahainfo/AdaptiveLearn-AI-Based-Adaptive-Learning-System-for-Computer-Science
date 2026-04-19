@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Adaptive Learning System - Moroccan Education</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div id="app">
+        <!-- Navigation -->
+        <nav class="navbar">
+            <div class="nav-container">
+                <div class="logo">🎓 AdaptiveLearn</div>
+                <ul class="nav-menu" id="navMenu">
+                    <li><a href="#" class="nav-link" onclick="navigateTo('dashboard')">Dashboard</a></li>
+                    <li><a href="#" class="nav-link" onclick="navigateTo('exercise')">Exercise</a></li>
+                    <li><a href="#" class="nav-link" onclick="navigateTo('diagnostic')">Diagnostic</a></li>
+                    <li><a href="#" class="nav-link" onclick="logout()">Logout</a></li>
+                </ul>
+            </div>
+        </nav>
+
+        <!-- Main Content -->
+        <div class="container">
+            
+            <!-- Login Page -->
+            <div id="login" class="page active">
+                <div class="form-container">
+                    <h1>Adaptive Learning System</h1>
+                    <p>For Moroccan High School Students</p>
+                    
+                    <div id="loginForm">
+                        <h2>Login</h2>
+                        <input type="text" id="loginUsername" placeholder="Username" required>
+                        <input type="password" id="loginPassword" placeholder="Password" required>
+                        <button onclick="handleLogin()">Login</button>
+                        <p>Don't have an account? <a href="#" onclick="showRegister()">Register here</a></p>
+                    </div>
+
+                    <div id="registerForm" style="display:none;">
+                        <h2>Register</h2>
+                        <input type="text" id="regUsername" placeholder="Username" required>
+                        <input type="email" id="regEmail" placeholder="Email" required>
+                        <input type="password" id="regPassword" placeholder="Password" required>
+                        <button onclick="handleRegister()">Register</button>
+                        <p>Already have an account? <a href="#" onclick="showLogin()">Login here</a></p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Dashboard Page -->
+            <div id="dashboard" class="page">
+                <h1>Your Learning Dashboard</h1>
+                
+                <div class="dashboard-grid">
+                    <!-- Statistics -->
+                    <div class="stat-card">
+                        <h3>Overall Progress</h3>
+                        <div class="stat-value" id="overallMastery">0%</div>
+                        <p id="masteryMessage">Start learning to track your progress...</p>
+                    </div>
+
+                    <div class="stat-card">
+                        <h3>Total Attempts</h3>
+                        <div class="stat-value" id="totalAttempts">0</div>
+                        <p>Exercises completed</p>
+                    </div>
+
+                    <div class="stat-card">
+                        <h3>Accuracy Rate</h3>
+                        <div class="stat-value" id="accuracyRate">0%</div>
+                        <p>Correct answers</p>
+                    </div>
+                </div>
+
+                <!-- Modules Section -->
+                <div class="section">
+                    <h2>📚 Modules</h2>
+                    <div id="modulesList" class="modules-grid"></div>
+                </div>
+
+                <!-- Module Details Modal -->
+                <div id="moduleModal" class="modal" style="display:none;">
+                    <div class="modal-content">
+                        <span class="close" onclick="closeModuleModal()">&times;</span>
+                        <h2 id="moduleTitle"></h2>
+                        <p id="moduleDescription"></p>
+                        <div id="sequencesList" class="sequences-list"></div>
+                    </div>
+                </div>
+
+                <!-- Sequence Diagnostic Modal -->
+                <div id="sequenceDiagnosticModal" class="modal" style="display:none;">
+                    <div class="modal-content">
+                        <span class="close" onclick="closeSequenceDiagnosticModal()">&times;</span>
+                        <h2 id="diagnosticSequenceTitle"></h2>
+                        <p id="diagnosticSequenceDesc"></p>
+                        <div id="diagnosticQuestionsContainer" class="questions"></div>
+                        <button onclick="submitSequenceDiagnostic()" class="btn-primary">Submit Diagnostic</button>
+                    </div>
+                </div>
+
+                <!-- Mastery by Modules -->
+                <div class="section">
+                    <h2>📊 Mastery Hierarchy</h2>
+                    <div id="masteryByModules" class="mastery-tree"></div>
+                </div>
+
+                <!-- Recommendations -->
+                <div class="section">
+                    <h2>What to Learn Next</h2>
+                    <div id="recommendations" class="recommendations"></div>
+                </div>
+            </div>
+
+            <!-- Exercise Page -->
+            <div id="exercise" class="page">
+                <h1>Exercise Mode</h1>
+                
+                <div id="exerciseLoading" class="loading">Loading exercise...</div>
+                
+                <div id="exerciseContent" style="display:none;">
+                    <h2 id="exerciseTitle">Exercise</h2>
+                    <div id="exercisePrompt" class="exercise-prompt"></div>
+
+                    <div class="exercise-controls">
+                        <div id="hintContainer">
+                            <button onclick="showHint()" class="btn-secondary">💡 Get Hint</button>
+                            <div id="hintDisplay" style="display:none;" class="hint-box"></div>
+                        </div>
+                    </div>
+
+                    <div class="answer-section">
+                        <label>Your Answer:</label>
+                        <textarea id="studentAnswer" placeholder="Enter your pseudocode or solution..."></textarea>
+                        <button onclick="submitAnswer()" class="btn-primary">Submit Answer</button>
+                    </div>
+
+                    <!-- Feedback -->
+                    <div id="feedbackContainer" style="display:none;" class="feedback-box">
+                        <div id="feedbackContent"></div>
+                        <button onclick="getNextExercise()" class="btn-primary">Next Exercise</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Diagnostic Test Page -->
+            <div id="diagnostic" class="page">
+                <h1>Diagnostic Test</h1>
+                <p>Let's assess your current knowledge</p>
+
+                <div id="diagnosticStep1" class="diagnostic-section">
+                    <h2>Select a Concept to Test</h2>
+                    <div id="conceptList" class="concept-grid"></div>
+                </div>
+
+                <div id="diagnosticStep2" style="display:none;" class="diagnostic-section">
+                    <h2>Answer the Questions</h2>
+                    <div id="questionsContainer" class="questions"></div>
+                    <button onclick="submitDiagnostic()" class="btn-primary">Submit Test</button>
+                </div>
+
+                <div id="diagnosticResults" style="display:none;" class="diagnostic-section">
+                    <h2>Test Results</h2>
+                    <div id="resultsContent" class="results-box"></div>
+                    <button onclick="navigateTo('dashboard')" class="btn-primary">Back to Dashboard</button>
+                </div>
+            </div>
+
+            <!-- Fullscreen Sequence Diagnostic Test Page -->
+            <div id="sequenceDiagnosticTest" class="page fullscreen-page">
+                <div class="fullscreen-diagnostic-container">
+                    <!-- Header with timer and progress -->
+                    <div class="diagnostic-header">
+                        <div class="diagnostic-header-left">
+                            <h2 id="testSequenceName"></h2>
+                            <p id="testSequenceDesc"></p>
+                        </div>
+                        <div class="diagnostic-header-right">
+                            <div class="progress-info">
+                                <span id="questionProgress">1/10</span>
+                                <div class="progress-bar">
+                                    <div id="progressFill" class="progress-fill"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Questions Container -->
+                    <div class="fullscreen-questions-container">
+                        <div id="fullscreenQuestionsContent" class="questions-content"></div>
+                    </div>
+
+                    <!-- Navigation and Submit -->
+                    <div class="diagnostic-footer">
+                        <button onclick="previousQuestion()" class="btn-secondary" id="prevBtn" style="display:none;">← Previous</button>
+                        <button onclick="nextQuestion()" class="btn-secondary" id="nextBtn">Next →</button>
+                        <button onclick="submitFullscreenDiagnostic()" class="btn-primary" id="submitBtn" style="display:none;">✓ Submit Test</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/config.js"></script>
+    <script src="js/api.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
