@@ -14,6 +14,7 @@ from backend.routes.diagnostic import router as diagnostic_router
 from backend.routes.exercise import router as exercise_router
 from backend.routes.analytics import router as analytics_router
 from backend.routes.curriculum import router as curriculum_router
+from backend.routes.admin import router as admin_router
 
 # Initialize database
 from backend.database.db import init_db, insert_default_concepts
@@ -47,6 +48,7 @@ app.include_router(curriculum_router)
 app.include_router(diagnostic_router)
 app.include_router(exercise_router)
 app.include_router(analytics_router)
+app.include_router(admin_router)  # Admin interface routes
 
 @app.get("/health")
 async def health_check():

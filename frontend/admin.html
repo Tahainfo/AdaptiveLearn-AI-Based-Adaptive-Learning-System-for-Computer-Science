@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Dashboard - AdaptiveLearn</title>
+    <link rel="stylesheet" href="../css/admin-style.css">
+</head>
+<body>
+    <div id="adminApp">
+        <!-- Navigation -->
+        <nav class="admin-navbar">
+            <div class="nav-container">
+                <div class="logo">🎓 AdaptiveLearn Admin</div>
+                <ul class="nav-menu">
+                    <li><a href="#" onclick="navigateTo('dashboard')" class="nav-link">Dashboard</a></li>
+                    <li><a href="#" onclick="navigateTo('students')" class="nav-link">Students</a></li>
+                    <li><a href="#" onclick="navigateTo('exercises')" class="nav-link">Exercises</a></li>
+                    <li><a href="#" onclick="navigateTo('analytics')" class="nav-link">Analytics</a></li>
+                    <li><a href="#" onclick="navigateTo('logs')" class="nav-link">Logs</a></li>
+                    <li><a href="#" onclick="logout()" class="nav-link logout">Logout</a></li>
+                </ul>
+            </div>
+        </nav>
+
+        <div class="admin-container">
+            
+            <!-- Dashboard Page -->
+            <div id="dashboard" class="admin-page active">
+                <h1>Admin Dashboard</h1>
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <h3>Total Students</h3>
+                        <div class="stat-value" id="totalStudents">0</div>
+                    </div>
+                    <div class="stat-card">
+                        <h3>Active Students</h3>
+                        <div class="stat-value" id="activeStudents">0</div>
+                    </div>
+                    <div class="stat-card">
+                        <h3>Total Exercises</h3>
+                        <div class="stat-value" id="totalExercises">0</div>
+                    </div>
+                    <div class="stat-card">
+                        <h3>Admin Exercises</h3>
+                        <div class="stat-value" id="adminExercises">0</div>
+                    </div>
+                </div>
+
+                <div class="dashboard-grid">
+                    <div class="dashboard-section">
+                        <h2>Student Mastery Distribution</h2>
+                        <div id="masteryChart" class="chart">
+                            <div class="bar-item">
+                                <span>Excellent (≥70%)</span>
+                                <div class="bar"><div class="fill excellent" style="width: 0%"></div></div>
+                                <span id="excellentCount">0</span>
+                            </div>
+                            <div class="bar-item">
+                                <span>Good (40-70%)</span>
+                                <div class="bar"><div class="fill good" style="width: 0%"></div></div>
+                                <span id="goodCount">0</span>
+                            </div>
+                            <div class="bar-item">
+                                <span>Needs Work (<40%)</span>
+                                <div class="bar"><div class="fill weak" style="width: 0%"></div></div>
+                                <span id="weakCount">0</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="dashboard-section">
+                        <h2>Recent Admin Actions</h2>
+                        <div id="recentLogs" class="logs-list">
+                            <!-- Logs loaded here -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Students Management Page -->
+            <div id="students" class="admin-page">
+                <h1>Student Management</h1>
+                
+                <button class="btn btn-primary" onclick="showCreateStudentForm()">+ Create Student</button>
+
+                <!-- Create Student Form -->
+                <div id="createStudentForm" class="form-modal" style="display:none;">
+                    <div class="form-content">
+                        <h2>Create New Student</h2>
+                        <form onsubmit="handleCreateStudent(event)">
+                            <input type="text" id="newUsername" placeholder="Username" required>
+                            <input type="email" id="newEmail" placeholder="Email" required>
+                            <input type="password" id="newPassword" placeholder="Password" required>
+                            <select id="newRole">
+                                <option value="student">Student</option>
+                                <option value="admin">Admin</option>
+                            </select>
+                            <button type="submit" class="btn btn-success">Create</button>
+                            <button type="button" class="btn btn-secondary" onclick="hideCreateStudentForm()">Cancel</button>
+                        </form>
+                    </div>
+                </div>
+
+                <!-- Students Table -->
+                <div class="table-responsive">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Username</th>
+                                <th>Email</th>
+                                <th>Role</th>
+                                <th>Status</th>
+                                <th>Created</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="studentsTableBody">
+                            <!-- Students loaded here -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Exercises Management Page -->
+            <div id="exercises" class="admin-page">
+                <h1>Exercise Management</h1>
+                
+                <button class="btn btn-primary" onclick="showCreateExerciseForm()">+ Create Exercise</button>
+
+                <!-- Create Exercise Form -->
+                <div id="createExerciseForm" class="form-modal" style="display:none;">
+                    <div class="form-content large">
+                        <h2>Create New Exercise</h2>
+                        <form onsubmit="handleCreateExercise(event)">
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label>Title *</label>
+                                    <input type="text" id="exTitle" required>
+                                </div>
+                                <div class="form-group">
+                                    <label>Difficulty *</label>
+                                    <select id="exDifficulty" required>
+                                        <option value="">-- Select --</option>
+                                        <option value="easy">Easy</option>
+                                        <option value="medium">Medium</option>
+                                        <option value="challenging">Challenging</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label>Exercise Type *</label>
+                                    <select id="exType" onchange="updateExerciseForm()" required>
+                                        <option value="">-- Select --</option>
+                                        <option value="mcq">Multiple Choice</option>
+                                        <option value="short_answer">Short Answer</option>
+                                        <option value="long_answer">Long Answer</option>
+                                        <option value="true_false">True/False</option>
+                                        <option value="drag_drop">Drag & Drop</option>
+                                        <option value="match_lines">Match Lines</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label>Concept *</label>
+                                    <select id="exConcept" required>
+                                        <option value="">-- Select Concept --</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label>Error Type Targeted</label>
+                                    <select id="exErrorType">
+                                        <option value="">None (General)</option>
+                                        <option value="conceptual">Conceptual Errors</option>
+                                        <option value="procedural">Procedural Errors</option>
+                                        <option value="careless">Careless Errors</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label>
+                                        <input type="checkbox" id="exDiagnostic"> Is Diagnostic?
+                                    </label>
+                                </div>
+                            </div>
+
+                            <!-- Dynamic fields based on exercise type -->
+                            <div id="dynamicExerciseFields">
+                                <!-- Fields injected here -->
+                            </div>
+
+                            <button type="submit" class="btn btn-success">Create Exercise</button>
+                            <button type="button" class="btn btn-secondary" onclick="hideCreateExerciseForm()">Cancel</button>
+                        </form>
+                    </div>
+                </div>
+
+                <!-- Exercises Table -->
+                <div class="table-responsive">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Title</th>
+                                <th>Type</th>
+                                <th>Difficulty</th>
+                                <th>Diagnostic</th>
+                                <th>Error Type</th>
+                                <th>Active</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="exercisesTableBody">
+                            <!-- Exercises loaded here -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Analytics Page -->
+            <div id="analytics" class="admin-page">
+                <h1>System Analytics</h1>
+                
+                <div class="analytics-grid">
+                    <div class="analytics-card">
+                        <h2>System Overview</h2>
+                        <div class="metric">
+                            <span>Total Students</span>
+                            <strong id="analyticsStudents">0</strong>
+                        </div>
+                        <div class="metric">
+                            <span>Average Mastery</span>
+                            <strong id="analyticsAvgMastery">0%</strong>
+                        </div>
+                        <div class="metric">
+                            <span>Total Exercises</span>
+                            <strong id="analyticsExercises">0</strong>
+                        </div>
+                        <div class="metric">
+                            <span>Diagnostic Rate</span>
+                            <strong id="analyticsDiagnostic">0%</strong>
+                        </div>
+                    </div>
+
+                    <div class="analytics-card">
+                        <h2>Weakest Concepts</h2>
+                        <div id="weakestConceptsList">
+                            <!-- Loaded dynamically -->
+                        </div>
+                    </div>
+
+                    <div class="analytics-card">
+                        <h2>Most Common Errors</h2>
+                        <div id="commonErrorsList">
+                            <!-- Loaded dynamically -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Logs Page -->
+            <div id="logs" class="admin-page">
+                <h1>Admin Action Logs</h1>
+                
+                <div class="logs-filters">
+                    <input type="text" id="logSearch" placeholder="Search logs...">
+                    <select id="logAction" onchange="filterLogs()">
+                        <option value="">All Actions</option>
+                        <option value="create_student">Create Student</option>
+                        <option value="update_student">Update Student</option>
+                        <option value="delete_student">Delete Student</option>
+                        <option value="create_exercise">Create Exercise</option>
+                        <option value="update_exercise">Update Exercise</option>
+                    </select>
+                </div>
+
+                <div class="table-responsive">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Admin</th>
+                                <th>Action</th>
+                                <th>Entity</th>
+                                <th>Entity ID</th>
+                                <th>Timestamp</th>
+                                <th>Details</th>
+                            </tr>
+                        </thead>
+                        <tbody id="logsTableBody">
+                            <!-- Logs loaded here -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="../js/admin-api.js"></script>
+    <script src="../js/admin-app.js"></script>
+</body>
+</html>

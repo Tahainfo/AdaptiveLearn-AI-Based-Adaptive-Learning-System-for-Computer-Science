@@ -54,13 +54,17 @@ async def get_all_modules(authorization: Optional[str] = Header(None)):
                 "concepts": []
             }
             
-            # Get concepts for this sequence
+            # Get concepts for this sequence with mastery levels
             cursor.execute("""
-                SELECT id, name, domain, description, hours
-                FROM concepts
-                WHERE sequence_id = ?
-                ORDER BY id
-            """, (seq[0],))
+                SELECT c.id, c.name, c.domain, c.description, c.hours, 
+                       COALESCE(m.mastery_level, 0.0) as mastery_level,
+                       COALESCE(m.attempts_count, 0) as attempts_count,
+                       COALESCE(m.correct_count, 0) as correct_count
+                FROM concepts c
+                LEFT JOIN mastery_state m ON c.id = m.concept_id AND m.student_id = ?
+                WHERE c.sequence_id = ?
+                ORDER BY c.id
+            """, (student_id, seq[0]))
             
             concepts = cursor.fetchall()
             for concept in concepts:
@@ -69,7 +73,10 @@ async def get_all_modules(authorization: Optional[str] = Header(None)):
                     "name": concept[1],
                     "domain": concept[2],
                     "description": concept[3],
-                    "hours": concept[4]
+                    "hours": concept[4],
+                    "mastery_level": concept[5],
+                    "attempts_count": concept[6],
+                    "correct_count": concept[7]
                 })
             
             module_data["sequences"].append(seq_data)
@@ -126,13 +133,17 @@ async def get_module_details(
             "concepts": []
         }
         
-        # Get concepts for this sequence
+        # Get concepts for this sequence with mastery levels
         cursor.execute("""
-            SELECT id, name, domain, description, hours
-            FROM concepts
-            WHERE sequence_id = ?
-            ORDER BY id
-        """, (seq[0],))
+            SELECT c.id, c.name, c.domain, c.description, c.hours,
+                   COALESCE(m.mastery_level, 0.0) as mastery_level,
+                   COALESCE(m.attempts_count, 0) as attempts_count,
+                   COALESCE(m.correct_count, 0) as correct_count
+            FROM concepts c
+            LEFT JOIN mastery_state m ON c.id = m.concept_id AND m.student_id = ?
+            WHERE c.sequence_id = ?
+            ORDER BY c.id
+        """, (student_id, seq[0]))
         
         concepts = cursor.fetchall()
         for concept in concepts:
@@ -141,7 +152,10 @@ async def get_module_details(
                 "name": concept[1],
                 "domain": concept[2],
                 "description": concept[3],
-                "hours": concept[4]
+                "hours": concept[4],
+                "mastery_level": concept[5],
+                "attempts_count": concept[6],
+                "correct_count": concept[7]
             })
         
         module_data["sequences"].append(seq_data)
@@ -154,7 +168,7 @@ async def get_sequence_details(
     sequence_id: int,
     authorization: Optional[str] = Header(None)
 ):
-    """Get a specific sequence with all its concepts"""
+    """Get a specific sequence with all its concepts and mastery levels"""
     student_id = get_current_student(authorization)
     
     conn = get_db_connection()
@@ -179,13 +193,17 @@ async def get_sequence_details(
         "concepts": []
     }
     
-    # Get concepts for this sequence
+    # Get concepts for this sequence with mastery levels
     cursor.execute("""
-        SELECT id, name, domain, description, hours
-        FROM concepts
-        WHERE sequence_id = ?
-        ORDER BY id
-    """, (sequence_id,))
+        SELECT c.id, c.name, c.domain, c.description, c.hours,
+               COALESCE(m.mastery_level, 0.0) as mastery_level,
+               COALESCE(m.attempts_count, 0) as attempts_count,
+               COALESCE(m.correct_count, 0) as correct_count
+        FROM concepts c
+        LEFT JOIN mastery_state m ON c.id = m.concept_id AND m.student_id = ?
+        WHERE c.sequence_id = ?
+        ORDER BY c.id
+    """, (student_id, sequence_id))
     
     concepts = cursor.fetchall()
     for concept in concepts:
@@ -194,7 +212,10 @@ async def get_sequence_details(
             "name": concept[1],
             "domain": concept[2],
             "description": concept[3],
-            "hours": concept[4]
+            "hours": concept[4],
+            "mastery_level": concept[5],
+            "attempts_count": concept[6],
+            "correct_count": concept[7]
         })
     
     conn.close()
@@ -205,18 +226,22 @@ async def get_concepts_by_sequence(
     sequence_id: int,
     authorization: Optional[str] = Header(None)
 ):
-    """Get all concepts (notions) for a specific sequence"""
+    """Get all concepts (notions) for a specific sequence with mastery levels"""
     student_id = get_current_student(authorization)
     
     conn = get_db_connection()
     cursor = conn.cursor()
     
     cursor.execute("""
-        SELECT id, name, domain, description, hours
-        FROM concepts
-        WHERE sequence_id = ?
-        ORDER BY id
-    """, (sequence_id,))
+        SELECT c.id, c.name, c.domain, c.description, c.hours,
+               COALESCE(m.mastery_level, 0.0) as mastery_level,
+               COALESCE(m.attempts_count, 0) as attempts_count,
+               COALESCE(m.correct_count, 0) as correct_count
+        FROM concepts c
+        LEFT JOIN mastery_state m ON c.id = m.concept_id AND m.student_id = ?
+        WHERE c.sequence_id = ?
+        ORDER BY c.id
+    """, (student_id, sequence_id))
     
     concepts = cursor.fetchall()
     conn.close()
@@ -227,7 +252,10 @@ async def get_concepts_by_sequence(
             "name": concept[1],
             "domain": concept[2],
             "description": concept[3],
-            "hours": concept[4]
+            "hours": concept[4],
+            "mastery_level": concept[5],
+            "attempts_count": concept[6],
+            "correct_count": concept[7]
         }
         for concept in concepts
     ]
