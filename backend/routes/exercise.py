@@ -60,9 +60,9 @@ async def get_next_exercise(authorization: Optional[str] = Header(None)):
         
         # Prepare AI request
         mastery_profiles = []
-        for concept_name, data in mastery_profile.items():
+        for cn, data in mastery_profile.items():
             mastery_profiles.append(MasteryProfile(
-                concept_name=concept_name,
+                concept_name=cn,
                 mastery_level=data['mastery_level'],
                 attempts=data['attempts'],
                 correct=data['correct']

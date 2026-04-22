@@ -42,6 +42,8 @@ def init_db():
             username TEXT UNIQUE NOT NULL,
             email TEXT UNIQUE NOT NULL,
             password_hash TEXT NOT NULL,
+            role TEXT NOT NULL DEFAULT 'student' CHECK(role IN ('student', 'admin')),
+            is_active INTEGER NOT NULL DEFAULT 1,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
@@ -111,6 +113,14 @@ def init_db():
             exercise_prompt TEXT,
             solution TEXT,
             explanation TEXT,
+            exercise_type TEXT DEFAULT 'short_answer'
+                CHECK(exercise_type IN ('mcq','drag_drop','match_lines','short_answer','long_answer','true_false')),
+            is_diagnostic INTEGER DEFAULT 0,
+            error_type_targeted TEXT
+                CHECK(error_type_targeted IN ('conceptual','procedural','careless') OR error_type_targeted IS NULL),
+            content_json TEXT,
+            created_by_admin_id INTEGER REFERENCES students(id),
+            is_active INTEGER DEFAULT 1,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (concept_id) REFERENCES concepts(id)
         )
@@ -155,12 +165,71 @@ def init_db():
             concept_id INTEGER NOT NULL,
             score REAL,
             answers TEXT,
+            error_types_detected TEXT,
+            classification TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (student_id) REFERENCES students(id),
             FOREIGN KEY (concept_id) REFERENCES concepts(id)
         )
     """)
-    
+
+    # Admin action audit log
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS admin_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            admin_id INTEGER NOT NULL,
+            action_type TEXT NOT NULL,
+            entity TEXT NOT NULL,
+            entity_id INTEGER,
+            target_user_id INTEGER,
+            details TEXT,
+            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (admin_id) REFERENCES students(id),
+            FOREIGN KEY (target_user_id) REFERENCES students(id)
+        )
+    """)
+
+    # Reusable exercise templates
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS exercise_templates (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            exercise_type TEXT NOT NULL,
+            content_json TEXT NOT NULL,
+            description TEXT,
+            created_by_admin_id INTEGER NOT NULL REFERENCES students(id),
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+    # Admin configuration settings
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS admin_settings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            setting_key TEXT UNIQUE NOT NULL,
+            setting_value TEXT,
+            description TEXT,
+            updated_by_admin_id INTEGER REFERENCES students(id),
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+    cursor.execute("""
+        INSERT OR IGNORE INTO admin_settings (setting_key, setting_value, description) VALUES
+            ('enable_ai_generation', 'true', 'Allow AI-generated exercises'),
+            ('prioritize_admin_exercises', 'true', 'Use admin exercises before AI-generated'),
+            ('max_diagnostic_questions', '10', 'Maximum questions per diagnostic test'),
+            ('mastery_threshold', '0.7', 'Mastery level threshold (0-1)'),
+            ('weak_concept_threshold', '0.4', 'Weakness threshold (0-1)')
+    """)
+
+    # Indexes for performance
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_students_role ON students(role)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_exercises_type ON exercises(exercise_type)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_exercises_active ON exercises(is_active)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_admin_logs_admin ON admin_logs(admin_id)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_admin_logs_ts ON admin_logs(timestamp)")
+
     conn.commit()
     conn.close()
     print(f"Database initialized at {DB_PATH}")

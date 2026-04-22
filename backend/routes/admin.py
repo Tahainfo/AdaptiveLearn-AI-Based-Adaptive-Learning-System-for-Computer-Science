@@ -5,7 +5,6 @@ Requires admin role for access
 from fastapi import APIRouter, HTTPException, Header, Depends
 from typing import Optional, List
 import json
-import hashlib
 from datetime import datetime
 
 from backend.models.admin_models import (
@@ -15,10 +14,11 @@ from backend.models.admin_models import (
     ExerciseTemplateCreate, ExerciseTemplateResponse
 )
 from backend.utils.rbac import (
-    require_admin, log_admin_action, verify_user_exists, 
+    require_admin, log_admin_action, verify_user_exists,
     verify_concept_exists, verify_sequence_exists, verify_module_exists,
     get_admin_username, get_student_mastery_stats, get_exercise_stats
 )
+from backend.utils.auth import hash_password
 from backend.database.db import get_db_connection
 from backend.routes.auth import get_current_student
 
@@ -45,7 +45,7 @@ async def create_student(
         raise HTTPException(status_code=400, detail="Username or email already exists")
     
     # Hash password
-    password_hash = hashlib.sha256(student_data.password.encode()).hexdigest()
+    password_hash = hash_password(student_data.password)
     
     try:
         cursor.execute("""
@@ -260,7 +260,7 @@ async def reset_password(
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    password_hash = hashlib.sha256(password_data.new_password.encode()).hexdigest()
+    password_hash = hash_password(password_data.new_password)
     
     try:
         cursor.execute(

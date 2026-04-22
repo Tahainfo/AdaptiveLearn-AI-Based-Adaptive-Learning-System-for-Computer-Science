@@ -92,51 +92,34 @@ class RecommendationEngine:
     
     def recommend_study_path(self, student_id: int, domain: str = None) -> List[Dict]:
         """
-        Recommend a structured learning path for a domain
-        domain: 'Algorithmics' or 'Networks'
+        Recommend a structured learning path, optionally filtered by domain.
+        Queries actual concept names from the database.
         """
         cursor = self.db.cursor()
-        
-        # Get concepts in order of dependency
-        algorithmics_order = [
-            "Conditionals - If/Else",
-            "Loops - For",
-            "Loops - While",
-            "Arrays/Lists",
-            "Pseudocode"
-        ]
-        
-        networks_order = [
-            "OSI Model",
-            "IP Addressing",
-            "Subnetting",
-            "Protocol Basics"
-        ]
-        
-        if domain == "Algorithmics":
-            concept_order = algorithmics_order
-        elif domain == "Networks":
-            concept_order = networks_order
+
+        if domain:
+            cursor.execute("""
+                SELECT c.id, c.name, m.mastery_level, m.attempts_count
+                FROM concepts c
+                LEFT JOIN mastery_state m ON c.id = m.concept_id AND m.student_id = ?
+                WHERE c.domain = ?
+                ORDER BY c.id
+            """, (student_id, domain))
         else:
-            concept_order = algorithmics_order + networks_order
-        
-        recommendations = []
-        
-        cursor.execute("""
-            SELECT c.id, c.name, m.mastery_level, m.attempts_count
-            FROM concepts c
-            LEFT JOIN mastery_state m ON c.id = m.concept_id AND m.student_id = ?
-            WHERE c.name IN ({})
-            ORDER BY c.name
-        """.format(','.join('?' * len(concept_order))), 
-        [student_id] + concept_order)
-        
+            cursor.execute("""
+                SELECT c.id, c.name, m.mastery_level, m.attempts_count
+                FROM concepts c
+                LEFT JOIN mastery_state m ON c.id = m.concept_id AND m.student_id = ?
+                ORDER BY c.id
+            """, (student_id,))
+
         concepts = cursor.fetchall()
-        
+        recommendations = []
+
         for concept_id, concept_name, mastery, attempts in concepts:
             mastery = mastery or 0.0
             attempts = attempts or 0
-            
+
             if attempts == 0:
                 status = "not_started"
                 action = "Begin"
@@ -149,7 +132,7 @@ class RecommendationEngine:
             else:
                 status = "mastered"
                 action = "Challenge"
-            
+
             recommendations.append({
                 "concept_id": concept_id,
                 "concept_name": concept_name,
@@ -158,7 +141,7 @@ class RecommendationEngine:
                 "status": status,
                 "recommended_action": action
             })
-        
+
         return recommendations
     
     def should_move_to_next_topic(self, student_id: int, current_concept_id: int) -> bool:
