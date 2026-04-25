@@ -110,7 +110,8 @@ class DiagnosticQuestion(BaseModel):
 
 class DiagnosticAnswer(BaseModel):
     question_id: int
-    selected_index: int
+    selected_index: int = -1
+    text_answer: Optional[str] = None
     concept_id: Optional[int] = None
 
 class DiagnosticTestRequest(BaseModel):

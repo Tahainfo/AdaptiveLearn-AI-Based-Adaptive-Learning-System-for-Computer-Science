@@ -156,6 +156,7 @@ class AdminExerciseResponse(BaseModel):
     exercise_type: str
     is_diagnostic: bool
     error_type_targeted: Optional[str]
+    content_json: Optional[Dict[str, Any]] = None
     is_active: bool
     created_by_admin_id: Optional[int]
     created_at: str

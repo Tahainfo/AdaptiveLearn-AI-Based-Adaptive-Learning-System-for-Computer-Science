@@ -55,26 +55,27 @@ async def login(credentials: StudentLogin):
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    cursor.execute("SELECT id, password_hash FROM students WHERE username = ?", 
+    cursor.execute("SELECT id, password_hash, role FROM students WHERE username = ?",
                    (credentials.username,))
     result = cursor.fetchone()
     conn.close()
-    
+
     if not result:
         raise HTTPException(status_code=401, detail="Invalid credentials")
-    
-    student_id, password_hash = result
-    
+
+    student_id, password_hash, role = result
+
     if not verify_password(credentials.password, password_hash):
         raise HTTPException(status_code=401, detail="Invalid credentials")
-    
+
     # Create token
     token = TokenStore.create_token(student_id)
-    
+
     return {
         "access_token": token,
         "token_type": "bearer",
-        "student_id": student_id
+        "student_id": student_id,
+        "role": role
     }
 
 @router.post("/logout")

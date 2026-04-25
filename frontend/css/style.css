@@ -1128,3 +1128,264 @@ button {
         width: 100%;
     }
 }
+
+/* =================================================================
+   DIAGNOSTIC REVIEW SCREEN
+   ================================================================= */
+
+.review-score-banner {
+    background: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%);
+    color: #fff;
+    border-radius: 12px;
+    padding: 1.5rem 2rem;
+    margin-bottom: 1.75rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 1rem;
+}
+
+.review-score-banner .score-left h2 {
+    margin: 0 0 0.25rem;
+    font-size: 1.4rem;
+}
+
+.review-score-banner .score-left p {
+    margin: 0;
+    opacity: 0.85;
+    font-size: 0.95rem;
+}
+
+.review-score-banner .score-right {
+    text-align: center;
+}
+
+.review-score-banner .score-circle {
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.2);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    border: 3px solid rgba(255,255,255,0.5);
+}
+
+.review-score-banner .score-circle .score-num {
+    font-size: 1.6rem;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.review-score-banner .score-circle .score-label {
+    font-size: 0.65rem;
+    opacity: 0.8;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+/* Question review cards */
+.review-questions {
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+    margin-bottom: 2rem;
+}
+
+.review-card {
+    background: #fff;
+    border-radius: 10px;
+    border: 1px solid #e2e8f0;
+    border-left: 5px solid #94a3b8;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+    overflow: hidden;
+    transition: box-shadow 0.2s;
+}
+
+.review-card.correct  { border-left-color: #22c55e; }
+.review-card.incorrect { border-left-color: #ef4444; }
+
+.review-card-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    padding: 1rem 1.25rem 0.5rem;
+    gap: 1rem;
+}
+
+.review-card-header .question-meta {
+    font-size: 0.8rem;
+    color: #64748b;
+    font-weight: 500;
+    white-space: nowrap;
+}
+
+.review-card-body {
+    padding: 0 1.25rem 1rem;
+}
+
+.review-question-text {
+    font-size: 1rem;
+    font-weight: 600;
+    color: #1e293b;
+    margin: 0 0 0.85rem;
+    line-height: 1.5;
+}
+
+.answer-row {
+    display: flex;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    margin-bottom: 0.6rem;
+}
+
+.answer-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.35rem 0.75rem;
+    border-radius: 999px;
+    font-size: 0.875rem;
+    font-weight: 500;
+}
+
+.answer-pill.student-correct {
+    background: #dcfce7;
+    color: #15803d;
+}
+
+.answer-pill.student-wrong {
+    background: #fee2e2;
+    color: #b91c1c;
+    text-decoration: line-through;
+}
+
+.answer-pill.correct-answer {
+    background: #dbeafe;
+    color: #1d4ed8;
+}
+
+.answer-pill .pill-icon {
+    font-size: 0.9rem;
+}
+
+/* Explain button */
+.explain-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin-top: 0.75rem;
+    padding: 0.4rem 1rem;
+    background: transparent;
+    border: 1.5px solid #6366f1;
+    border-radius: 6px;
+    color: #6366f1;
+    font-size: 0.85rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+}
+
+.explain-btn:hover:not(:disabled) {
+    background: #6366f1;
+    color: #fff;
+}
+
+.explain-btn:disabled {
+    opacity: 0.55;
+    cursor: default;
+}
+
+.explain-btn .btn-spinner {
+    width: 14px;
+    height: 14px;
+    border: 2px solid currentColor;
+    border-top-color: transparent;
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+    display: inline-block;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+/* Explanation box */
+.explanation-box {
+    margin-top: 0.85rem;
+    padding: 0.9rem 1.1rem;
+    background: #eff6ff;
+    border-left: 3px solid #3b82f6;
+    border-radius: 0 8px 8px 0;
+    font-size: 0.9rem;
+    color: #1e3a5f;
+    line-height: 1.65;
+    animation: fadeInDown 0.25s ease;
+}
+
+.explanation-box .explain-label {
+    font-weight: 700;
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #3b82f6;
+    margin-bottom: 0.35rem;
+}
+
+.explanation-error {
+    color: #b91c1c;
+    background: #fee2e2;
+    border-left-color: #ef4444;
+}
+
+@keyframes fadeInDown {
+    from { opacity: 0; transform: translateY(-6px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Review actions row */
+.review-actions {
+    display: flex;
+    gap: 1rem;
+    justify-content: flex-end;
+    padding-top: 0.5rem;
+    border-top: 1px solid #e2e8f0;
+}
+
+/* Text answer input in diagnostic step 2 */
+.text-answer-input {
+    width: 100%;
+    max-width: 420px;
+    padding: 0.65rem 0.9rem;
+    border: 1.5px solid #cbd5e1;
+    border-radius: 8px;
+    font-size: 1rem;
+    transition: border-color 0.2s;
+}
+
+.text-answer-input:focus {
+    outline: none;
+    border-color: #6366f1;
+    box-shadow: 0 0 0 3px rgba(99,102,241,0.12);
+}
+
+@media (max-width: 600px) {
+    .review-score-banner {
+        flex-direction: column;
+        text-align: center;
+    }
+
+    .review-score-banner .score-right {
+        align-self: center;
+    }
+
+    .review-actions {
+        flex-direction: column-reverse;
+    }
+
+    .answer-row {
+        flex-direction: column;
+    }
+}

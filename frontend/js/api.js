@@ -157,6 +157,10 @@ class API {
     async submitDiagnosticTest(answers) {
         return this.request('POST', '/diagnostic/submit', { answers });
     }
+
+    async explainAnswer(payload) {
+        return this.request('POST', '/ai/explain', payload);
+    }
 }
 
 const api = new API();

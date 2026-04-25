@@ -166,6 +166,16 @@
                     <div id="resultsContent" class="results-box"></div>
                     <button onclick="navigateTo('dashboard')" class="btn-primary">Back to Dashboard</button>
                 </div>
+
+                <!-- Review screen shown after submit -->
+                <div id="diagnosticReview" style="display:none;" class="diagnostic-section">
+                    <div id="reviewScoreBanner" class="review-score-banner"></div>
+                    <div id="reviewQuestionsContainer" class="review-questions"></div>
+                    <div class="review-actions">
+                        <button onclick="retakeDiagnostic()" class="btn-secondary">Retake Test</button>
+                        <button onclick="navigateTo('dashboard')" class="btn-primary">Back to Dashboard</button>
+                    </div>
+                </div>
             </div>
 
             <!-- Fullscreen Sequence Diagnostic Test Page -->

@@ -7,12 +7,64 @@ let conceptsList = [];
 
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
+    checkAdminAuthentication();
+});
+
+// =================================================================
+// AUTHENTICATION
+// =================================================================
+
+function checkAdminAuthentication() {
     if (!adminAPI.token) {
-        window.location.href = '/index.html';
+        // Show login page
+        document.getElementById('loginPage').style.display = 'flex';
+        document.getElementById('dashboardArea').style.display = 'none';
     } else {
+        // Show dashboard
+        document.getElementById('loginPage').style.display = 'none';
+        document.getElementById('dashboardArea').style.display = 'block';
         loadDashboard();
     }
-});
+}
+
+async function handleAdminLogin(event) {
+    event.preventDefault();
+    
+    const username = document.getElementById('adminUsername').value;
+    const password = document.getElementById('adminPassword').value;
+    const errorElement = document.getElementById('loginError');
+    
+    try {
+        errorElement.style.display = 'none';
+        errorElement.textContent = '';
+        
+        // Clear fields
+        document.getElementById('adminUsername').value = '';
+        document.getElementById('adminPassword').value = '';
+        
+        // Attempt login
+        await adminAPI.login(username, password);
+        
+        // On success, show dashboard
+        document.getElementById('loginPage').style.display = 'none';
+        document.getElementById('dashboardArea').style.display = 'block';
+        loadDashboard();
+        
+    } catch (error) {
+        errorElement.textContent = error.message;
+        errorElement.style.display = 'block';
+    }
+}
+
+function logout() {
+    if (confirm('Are you sure you want to logout?')) {
+        adminAPI.logout();
+        document.getElementById('loginPage').style.display = 'flex';
+        document.getElementById('dashboardArea').style.display = 'none';
+        document.getElementById('adminUsername').value = '';
+        document.getElementById('adminPassword').value = '';
+    }
+}
 
 // =================================================================
 // NAVIGATION
@@ -176,13 +228,20 @@ async function deleteStudentConfirm(studentId) {
 // EXERCISES MANAGEMENT
 // =================================================================
 
-async function loadExercises() {
+async function loadConcepts() {
     try {
-        if (conceptsList.length === 0) {
-            conceptsList = await adminAPI.getAllConcepts();
-            populateConceptSelect();
-        }
+        conceptsList = await adminAPI.getAllConcepts();
+        populateConceptSelect();
+    } catch (error) {
+        console.error('Failed to load concepts:', error);
+    }
+}
 
+async function loadExercises() {
+    // Always refresh concepts when the exercises page loads
+    await loadConcepts();
+
+    try {
         const data = await adminAPI.listExercises();
         
         const tableBody = document.getElementById('exercisesTableBody');
@@ -190,6 +249,7 @@ async function loadExercises() {
             <tr>
                 <td>${ex.id}</td>
                 <td>${ex.title}</td>
+                <td>${ex.concept_name || '—'}</td>
                 <td><span class="badge">${ex.exercise_type}</span></td>
                 <td>${ex.difficulty}</td>
                 <td>${ex.is_diagnostic ? '✓' : '—'}</td>
@@ -197,10 +257,11 @@ async function loadExercises() {
                 <td><span class="badge ${ex.is_active ? 'active' : 'inactive'}">${ex.is_active ? 'Yes' : 'No'}</span></td>
                 <td>
                     <button class="btn-small" onclick="editExercise(${ex.id})">Edit</button>
-                    ${ex.is_active ? 
+                    ${ex.is_active ?
                         `<button class="btn-small" onclick="deactivateExerciseConfirm(${ex.id})">Deactivate</button>` :
                         `<button class="btn-small" onclick="activateExerciseConfirm(${ex.id})">Activate</button>`
                     }
+                    <button class="btn-small btn-danger" onclick="deleteExerciseConfirm(${ex.id})">Delete</button>
                 </td>
             </tr>
         `).join('');
@@ -213,14 +274,22 @@ async function loadExercises() {
 
 function populateConceptSelect() {
     const select = document.getElementById('exConcept');
-    select.innerHTML = '<option value="">-- Select Concept --</option>' + conceptsList.map(c => 
-        `<option value="${c.id}">${c.name}</option>`
-    ).join('');
+    select.innerHTML = '<option value="">-- Select Concept --</option>' +
+        conceptsList.map(c =>
+            `<option value="${c.id}"
+                     data-module-id="${c.module_id}"
+                     data-sequence-id="${c.sequence_id}">
+                ${c.sequence_title} → ${c.name}
+             </option>`
+        ).join('');
 }
 
-function showCreateExerciseForm() {
+async function showCreateExerciseForm() {
     if (conceptsList.length === 0) {
-        alert('Loading concepts...');
+        await loadConcepts();
+    }
+    if (conceptsList.length === 0) {
+        alert('Could not load concepts. Please refresh the page and try again.');
         return;
     }
     document.getElementById('createExerciseForm').style.display = 'flex';
@@ -261,6 +330,10 @@ function updateExerciseForm() {
                 <label>Correct Answer *</label>
                 <input type="text" id="exSAAnswer" placeholder="Expected answer" required>
             </div>
+            <div class="form-group">
+                <label>Alternative Accepted Answers <small>(comma-separated, optional)</small></label>
+                <input type="text" id="exSAAlternatives" placeholder="alt1, alt2, alt3">
+            </div>
         `;
     } else if (type === 'true_false') {
         fieldsDiv.innerHTML = `
@@ -284,7 +357,8 @@ async function handleCreateExercise(event) {
     event.preventDefault();
 
     const type = document.getElementById('exType').value;
-    const conceptId = parseInt(document.getElementById('exConcept').value);
+    const conceptSelect = document.getElementById('exConcept');
+    const conceptId = parseInt(conceptSelect.value);
     const title = document.getElementById('exTitle').value;
     const difficulty = document.getElementById('exDifficulty').value;
     const errorType = document.getElementById('exErrorType').value || null;
@@ -295,24 +369,31 @@ async function handleCreateExercise(event) {
         return;
     }
 
+    // Only mcq, true_false, and short_answer are supported in the diagnostic flow
+    if (isDiagnostic && !['mcq', 'true_false', 'short_answer'].includes(type)) {
+        alert('Diagnostic exercises must be MCQ, True/False, or Short Answer.\nPlease change the type or uncheck Diagnostic.');
+        return;
+    }
+
+    // Derive module_id and sequence_id from the selected concept option
+    const selectedOption = conceptSelect.options[conceptSelect.selectedIndex];
+    const moduleId = parseInt(selectedOption.dataset.moduleId) || 1;
+    const sequenceId = parseInt(selectedOption.dataset.sequenceId) || 1;
+
     let contentJson = {};
 
     if (type === 'mcq') {
         const question = document.getElementById('exMCQQuestion').value;
         const options = document.getElementById('exMCQOptions').value.split(',').map(o => o.trim());
         const correctIdx = parseInt(document.getElementById('exMCQCorrect').value);
-        
-        contentJson = {
-            question,
-            options,
-            correct_option: correctIdx,
-            explanation: ''
-        };
+        contentJson = { question, options, correct_option: correctIdx, explanation: '' };
     } else if (type === 'short_answer') {
+        const altsRaw = document.getElementById('exSAAlternatives')?.value || '';
+        const alternatives = altsRaw ? altsRaw.split(',').map(a => a.trim()).filter(Boolean) : [];
         contentJson = {
             question: document.getElementById('exSAQuestion').value,
             correct_answer: document.getElementById('exSAAnswer').value,
-            alternative_answers: []
+            alternative_answers: alternatives
         };
     } else if (type === 'true_false') {
         contentJson = {
@@ -325,8 +406,8 @@ async function handleCreateExercise(event) {
         await adminAPI.createExercise({
             title,
             description: '',
-            module_id: 1,
-            sequence_id: 1,
+            module_id: moduleId,
+            sequence_id: sequenceId,
             concept_id: conceptId,
             difficulty,
             exercise_type: type,
@@ -344,7 +425,74 @@ async function handleCreateExercise(event) {
 }
 
 async function editExercise(exerciseId) {
-    alert('Edit functionality coming soon');
+    try {
+        const ex = await adminAPI.getExerciseDetails(exerciseId);
+
+        document.getElementById('editExId').value = ex.id;
+        document.getElementById('editExTitle').value = ex.title;
+        document.getElementById('editExDifficulty').value = ex.difficulty;
+        document.getElementById('editExDiagnostic').checked = ex.is_diagnostic;
+
+        const errorSelect = document.getElementById('editExErrorType');
+        errorSelect.value = ex.error_type_targeted || '';
+
+        document.getElementById('editExContentJson').value =
+            ex.content_json ? JSON.stringify(ex.content_json, null, 2) : '';
+
+        document.getElementById('editExerciseForm').style.display = 'flex';
+    } catch (error) {
+        alert('Error loading exercise: ' + error.message);
+    }
+}
+
+function hideEditExerciseForm() {
+    document.getElementById('editExerciseForm').style.display = 'none';
+}
+
+async function handleEditExercise(event) {
+    event.preventDefault();
+
+    const exerciseId = document.getElementById('editExId').value;
+    const contentRaw = document.getElementById('editExContentJson').value.trim();
+
+    let contentJson = null;
+    if (contentRaw) {
+        try {
+            contentJson = JSON.parse(contentRaw);
+        } catch (e) {
+            alert('Invalid JSON in Content JSON field: ' + e.message);
+            return;
+        }
+    }
+
+    const updateData = {
+        title: document.getElementById('editExTitle').value,
+        difficulty: document.getElementById('editExDifficulty').value,
+        is_diagnostic: document.getElementById('editExDiagnostic').checked,
+        error_type_targeted: document.getElementById('editExErrorType').value || null,
+        content_json: contentJson,
+    };
+
+    try {
+        await adminAPI.updateExercise(exerciseId, updateData);
+        alert('Exercise updated successfully');
+        hideEditExerciseForm();
+        loadExercises();
+    } catch (error) {
+        alert('Error updating exercise: ' + error.message);
+    }
+}
+
+async function deleteExerciseConfirm(exerciseId) {
+    if (confirm('Permanently delete this exercise and all its attempt records? This cannot be undone.')) {
+        try {
+            await adminAPI.deleteExercise(exerciseId);
+            alert('Exercise deleted');
+            loadExercises();
+        } catch (error) {
+            alert('Error deleting exercise: ' + error.message);
+        }
+    }
 }
 
 async function activateExerciseConfirm(exerciseId) {
@@ -440,10 +588,3 @@ function filterLogs() {
 // =================================================================
 // LOGOUT
 // =================================================================
-
-function logout() {
-    if (confirm('Are you sure you want to logout?')) {
-        localStorage.removeItem('adminToken');
-        window.location.href = '/index.html';
-    }
-}

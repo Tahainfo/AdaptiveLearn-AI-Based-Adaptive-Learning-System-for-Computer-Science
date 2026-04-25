@@ -444,31 +444,53 @@ async function loadDiagnosticConcepts() {
 
 async function selectDiagnosticConcept(conceptId, element) {
     currentDiagnosticConcept = conceptId;
-    
+
     document.querySelectorAll('.concept-card').forEach(card => {
         card.classList.remove('selected');
     });
     element.classList.add('selected');
 
+    const submitBtn = document.querySelector('#diagnosticStep2 button[onclick="submitDiagnostic()"]');
+
     try {
         diagnosticQuestions = await api.getDiagnosticQuestions(conceptId);
-        
-        const html = diagnosticQuestions.map((q, idx) => `
-            <div class="question-item">
-                <h4>Question ${idx + 1}</h4>
-                <p>${q.question}</p>
-                <div class="options">
-                    ${q.options.map((opt, optIdx) => `
+
+        if (diagnosticQuestions.length === 0) {
+            document.getElementById('questionsContainer').innerHTML = `
+                <div style="text-align:center; padding: 2rem; color: #64748b;">
+                    <p style="font-size: 2rem; margin-bottom: 0.5rem;">📭</p>
+                    <p style="font-size: 1.1rem; font-weight: 600; color: #334155; margin-bottom: 0.5rem;">
+                        No diagnostic exercises available yet
+                    </p>
+                    <p>The administrator has not added any diagnostic exercises for this concept.<br>
+                       Please select a different concept or check back later.</p>
+                </div>`;
+            if (submitBtn) submitBtn.style.display = 'none';
+            document.getElementById('diagnosticStep1').style.display = 'none';
+            document.getElementById('diagnosticStep2').style.display = 'block';
+            return;
+        }
+
+        const html = diagnosticQuestions.map((q, idx) => {
+            const inputHtml = q.input_type === 'text'
+                ? `<input type="text" name="q${idx}" class="text-answer-input"
+                          placeholder="Type your answer here" autocomplete="off">`
+                : (q.options || []).map((opt, optIdx) => `
                         <label class="option-input">
                             <input type="radio" name="q${idx}" value="${optIdx}" required>
                             ${opt}
-                        </label>
-                    `).join('')}
-                </div>
-            </div>
-        `).join('');
+                        </label>`).join('');
+
+            return `
+            <div class="question-item">
+                <h4>Question ${idx + 1}</h4>
+                <p>${q.question}</p>
+                <div class="options">${inputHtml}</div>
+            </div>`;
+        }).join('');
 
         document.getElementById('questionsContainer').innerHTML = html;
+        if (submitBtn) submitBtn.style.display = '';
         document.getElementById('diagnosticStep1').style.display = 'none';
         document.getElementById('diagnosticStep2').style.display = 'block';
 
@@ -481,12 +503,23 @@ async function submitDiagnostic() {
     const answers = [];
 
     diagnosticQuestions.forEach((q, idx) => {
-        const selected = document.querySelector(`input[name="q${idx}"]:checked`);
-        if (selected) {
-            answers.push({
-                question_id: idx,
-                selected_index: parseInt(selected.value)
-            });
+        if (q.input_type === 'text') {
+            const input = document.querySelector(`input[name="q${idx}"]`);
+            if (input && input.value.trim()) {
+                answers.push({
+                    question_id: q.id,
+                    selected_index: -1,
+                    text_answer: input.value.trim()
+                });
+            }
+        } else {
+            const selected = document.querySelector(`input[name="q${idx}"]:checked`);
+            if (selected) {
+                answers.push({
+                    question_id: q.id,
+                    selected_index: parseInt(selected.value)
+                });
+            }
         }
     });
 
@@ -497,23 +530,18 @@ async function submitDiagnostic() {
 
     try {
         const results = await api.submitDiagnostic(currentDiagnosticConcept, answers);
-        
-        const html = `
-            <h3>${results.concept_name}</h3>
-            <p><strong>Score:</strong> ${Math.round(results.score)}%</p>
-            <p><strong>Mastery Level:</strong> ${Math.round(results.mastery_level * 100)}%</p>
-            <p style="margin-top: 1rem; color: #666;">
-                Your mastery level has been recorded. You can now proceed with exercises for this concept.
-            </p>
-        `;
-
-        document.getElementById('resultsContent').innerHTML = html;
         document.getElementById('diagnosticStep2').style.display = 'none';
-        document.getElementById('diagnosticResults').style.display = 'block';
-
+        showDiagnosticReview(diagnosticQuestions, answers, results);
     } catch (error) {
         alert('Failed to submit test: ' + error.message);
     }
+}
+
+function retakeDiagnostic() {
+    document.getElementById('diagnosticReview').style.display = 'none';
+    document.getElementById('diagnosticStep1').style.display = 'block';
+    diagnosticQuestions = [];
+    currentDiagnosticConcept = null;
 }
 
 // ======================
@@ -575,20 +603,49 @@ async function startSequenceDiagnostic(sequenceId, sequenceTitle) {
     try {
         const sequence = await api.getSequenceDetails(sequenceId);
         
-        // Get diagnostic questions for all concepts in this sequence
+        // Fetch admin-created diagnostic exercises for every concept in this sequence
         const allQuestions = [];
-        
+
         for (const concept of sequence.concepts) {
             try {
                 const questions = await api.getDiagnosticQuestionsForConcept(concept.id);
-                allQuestions.push(...questions.map(q => ({ ...q, concept_id: concept.id, concept_name: concept.name })));
+                if (questions.length > 0) {
+                    allQuestions.push(...questions.map(q => ({
+                        ...q,
+                        concept_id: concept.id,
+                        concept_name: concept.name
+                    })));
+                }
             } catch (e) {
-                console.warn('No questions for concept:', concept.name);
+                console.warn('Could not load questions for concept:', concept.name);
             }
         }
-        
+
         if (allQuestions.length === 0) {
-            alert('No diagnostic questions available for this sequence');
+            closeModuleModal();
+            // Build a friendly modal-style message
+            const overlay = document.createElement('div');
+            overlay.style.cssText = `
+                position:fixed; inset:0; background:rgba(0,0,0,.5);
+                display:flex; align-items:center; justify-content:center; z-index:9999;`;
+            overlay.innerHTML = `
+                <div style="background:#fff; border-radius:12px; padding:2rem 2.5rem;
+                            max-width:420px; text-align:center; box-shadow:0 8px 32px rgba(0,0,0,.2);">
+                    <p style="font-size:2.5rem; margin:0 0 .5rem;">📭</p>
+                    <h3 style="margin:0 0 .75rem; color:#1e293b;">No Diagnostic Exercises Yet</h3>
+                    <p style="color:#64748b; margin:0 0 1.5rem; line-height:1.6;">
+                        The administrator has not added any diagnostic exercises
+                        for the <strong>${sequenceTitle}</strong> sequence yet.<br><br>
+                        Please ask your teacher to create diagnostic exercises before
+                        this test becomes available.
+                    </p>
+                    <button onclick="this.closest('div[style*=fixed]').remove()"
+                            style="background:#2563eb; color:#fff; border:none; border-radius:8px;
+                                   padding:.65rem 1.5rem; font-size:1rem; cursor:pointer;">
+                        OK
+                    </button>
+                </div>`;
+            document.body.appendChild(overlay);
             return;
         }
         
@@ -656,22 +713,30 @@ function showFullscreenQuestion(index) {
     document.getElementById('progressFill').style.width = progressPercent + '%';
     
     // Display question
+    let inputHtml;
+    if (question.input_type === 'text') {
+        const savedText = fullscreenDiagnosticAnswers[index] || '';
+        inputHtml = `<input type="text" class="text-answer-input" id="fsTextAnswer"
+                            value="${savedText}" autocomplete="off"
+                            placeholder="Type your answer here"
+                            oninput="fullscreenDiagnosticAnswers[${index}] = this.value">`;
+    } else {
+        inputHtml = (question.options || []).map((opt, optIdx) => {
+            const isChecked = fullscreenDiagnosticAnswers[index] === optIdx ? 'checked' : '';
+            return `
+                <label class="option-input">
+                    <input type="radio" name="currentQuestion" value="${optIdx}" ${isChecked}
+                           onchange="fullscreenDiagnosticAnswers[${index}] = ${optIdx}">
+                    ${opt}
+                </label>`;
+        }).join('');
+    }
+
     const questionHtml = `
         <div class="question-item">
             <h4>Question ${index + 1} - ${question.concept_name}</h4>
             <p>${question.question}</p>
-            <div class="options">
-                ${question.options.map((opt, optIdx) => {
-                    const isChecked = fullscreenDiagnosticAnswers[index] === optIdx ? 'checked' : '';
-                    return `
-                        <label class="option-input">
-                            <input type="radio" name="currentQuestion" value="${optIdx}" ${isChecked} 
-                                   onchange="fullscreenDiagnosticAnswers[${index}] = ${optIdx}">
-                            ${opt}
-                        </label>
-                    `;
-                }).join('')}
-            </div>
+            <div class="options">${inputHtml}</div>
         </div>
     `;
     
@@ -789,22 +854,28 @@ async function submitFullscreenDiagnostic() {
     // Check if all questions are answered
     const unanswered = [];
     for (let i = 0; i < diagnosticQuestions.length; i++) {
-        if (fullscreenDiagnosticAnswers[i] === undefined) {
+        const val = fullscreenDiagnosticAnswers[i];
+        const isText = diagnosticQuestions[i].input_type === 'text';
+        if (val === undefined || (isText && String(val).trim() === '')) {
             unanswered.push(i + 1);
         }
     }
-    
+
     if (unanswered.length > 0) {
         alert(`Please answer all questions. Unanswered: Question(s) ${unanswered.join(', ')}`);
         return;
     }
-    
-    // Prepare answers
-    const answers = diagnosticQuestions.map((q, idx) => ({
-        question_id: q.id || idx,
-        selected_index: fullscreenDiagnosticAnswers[idx],
-        concept_id: q.concept_id
-    }));
+
+    // Prepare answers — text vs radio
+    const answers = diagnosticQuestions.map((q, idx) => {
+        const isText = q.input_type === 'text';
+        return {
+            question_id: q.id || idx,
+            selected_index: isText ? -1 : fullscreenDiagnosticAnswers[idx],
+            text_answer: isText ? String(fullscreenDiagnosticAnswers[idx] || '') : null,
+            concept_id: q.concept_id
+        };
+    });
     
     try {
         // Submit diagnostic
@@ -822,26 +893,24 @@ async function submitFullscreenDiagnostic() {
 }
 
 function showFullscreenResults(results) {
-    // Show navbar again
+    // Restore navbar and navigate to the diagnostic page review
     document.querySelector('.navbar').style.display = '';
-    
-    // Navigate back to dashboard
-    setTimeout(() => {
-        navigateTo('dashboard');
-        loadDashboard();
-        
-        // Show results message
-        let resultMessage = '✅ Diagnostic Test Completed!\n\nResults:\n';
-        if (Array.isArray(results)) {
-            results.forEach(result => {
-                resultMessage += `\n${result.concept_name}: ${Math.round(result.score)}%`;
-            });
-        } else {
-            resultMessage += `\nOverall Score: ${Math.round(results.score)}%`;
-        }
-        
-        alert(resultMessage);
-    }, 500);
+    exitFullscreen();
+
+    // Build the answers array from global state so the review can use it
+    const answers = diagnosticQuestions.map((q, idx) => {
+        const isText = q.input_type === 'text';
+        return {
+            question_id: q.id || idx,
+            selected_index: isText ? -1 : (fullscreenDiagnosticAnswers[idx] ?? -1),
+            text_answer: isText ? String(fullscreenDiagnosticAnswers[idx] || '') : null,
+            concept_id: q.concept_id
+        };
+    });
+
+    // Navigate to the diagnostic page and show the review
+    navigateTo('diagnostic');
+    showDiagnosticReview(diagnosticQuestions, answers, results);
 }
 
 async function submitSequenceDiagnostic() {
@@ -902,3 +971,208 @@ loadDashboard = async function() {
     await originalLoadDashboard();
     await loadModules();
 };
+
+// =================================================================
+// DIAGNOSTIC REVIEW  (shown after any diagnostic submit)
+// =================================================================
+
+// Cache so clicking "Explain" twice doesn't re-call the API
+const _explanationCache = {};
+
+/**
+ * Resolve a student's answer for a question to human-readable text.
+ */
+function _resolveStudentAnswer(question, answer) {
+    if (question.input_type === 'text') {
+        return answer.text_answer || '(no answer)';
+    }
+    const idx = answer.selected_index;
+    if (idx < 0) return '(not answered)';
+    return (question.options && question.options[idx]) || `Option ${idx}`;
+}
+
+/**
+ * Resolve the correct answer to human-readable text.
+ */
+function _resolveCorrectAnswer(question) {
+    if (question.input_type === 'text') {
+        return question.correct_answer || '';
+    }
+    const idx = question.correct_index ?? 0;
+    return (question.options && question.options[idx]) || `Option ${idx}`;
+}
+
+/**
+ * Determine if a student answer is correct.
+ */
+function _isAnswerCorrect(question, answer) {
+    if (question.input_type === 'text') {
+        const student = (answer.text_answer || '').trim().toLowerCase();
+        const expected = (question.correct_answer || '').trim().toLowerCase();
+        const alts = (question.alternative_answers || []).map(a => a.trim().toLowerCase());
+        return student === expected || alts.includes(student);
+    }
+    return answer.selected_index === (question.correct_index ?? -99);
+}
+
+/**
+ * Render the diagnostic review screen.
+ * @param {Array}  questions  - diagnosticQuestions array
+ * @param {Array}  answers    - answers array built at submit time
+ * @param {Object|Array} results - backend scoring result(s)
+ */
+function showDiagnosticReview(questions, answers, results) {
+    // Hide all other diagnostic sections
+    ['diagnosticStep1', 'diagnosticStep2', 'diagnosticResults'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.style.display = 'none';
+    });
+
+    // --- Score banner ---
+    let totalCorrect = 0;
+    const answerMap = {};
+    answers.forEach(a => { answerMap[a.question_id] = a; });
+
+    questions.forEach(q => {
+        const a = answerMap[q.id];
+        if (a && _isAnswerCorrect(q, a)) totalCorrect++;
+    });
+
+    const pct = questions.length ? Math.round((totalCorrect / questions.length) * 100) : 0;
+    let conceptLabel = '';
+    if (Array.isArray(results)) {
+        conceptLabel = results.map(r => r.concept_name).join(', ');
+    } else if (results && results.concept_name) {
+        conceptLabel = results.concept_name;
+    }
+
+    const masteryColor = pct >= 80 ? '#22c55e' : pct >= 50 ? '#f59e0b' : '#ef4444';
+
+    document.getElementById('reviewScoreBanner').innerHTML = `
+        <div class="score-left">
+            <h2>${conceptLabel || 'Diagnostic Review'}</h2>
+            <p>${totalCorrect} correct out of ${questions.length} questions</p>
+        </div>
+        <div class="score-right">
+            <div class="score-circle" style="border-color:${masteryColor};">
+                <span class="score-num" style="color:${masteryColor};">${pct}%</span>
+                <span class="score-label">Score</span>
+            </div>
+        </div>`;
+
+    // --- Question cards ---
+    const cardsHtml = questions.map((q, idx) => {
+        const answer = answerMap[q.id] || { selected_index: -1, text_answer: '' };
+        const correct = _isAnswerCorrect(q, answer);
+        const studentText = _resolveStudentAnswer(q, answer);
+        const correctText = _resolveCorrectAnswer(q);
+
+        const studentPillClass = correct ? 'student-correct' : 'student-wrong';
+        const studentIcon = correct ? '✓' : '✗';
+
+        const correctPillHtml = correct ? '' : `
+            <span class="answer-pill correct-answer">
+                <span class="pill-icon">✓</span> ${correctText}
+            </span>`;
+
+        return `
+        <div class="review-card ${correct ? 'correct' : 'incorrect'}" id="review-card-${idx}">
+            <div class="review-card-header">
+                <span style="font-size:0.85rem;color:#64748b;font-weight:500;">
+                    ${q.concept_name ? `<em>${q.concept_name}</em> · ` : ''}Q${idx + 1}
+                </span>
+                <span class="question-meta">${q.input_type === 'text' ? 'Short Answer' : q.options?.length === 2 ? 'True / False' : 'MCQ'}</span>
+            </div>
+            <div class="review-card-body">
+                <p class="review-question-text">${q.question}</p>
+                <div class="answer-row">
+                    <span class="answer-pill ${studentPillClass}">
+                        <span class="pill-icon">${studentIcon}</span> ${studentText}
+                    </span>
+                    ${correctPillHtml}
+                </div>
+                <button class="explain-btn" id="explain-btn-${idx}"
+                        onclick="explainAnswer(${idx})">
+                    ✨ Explain the correct answer
+                </button>
+                <div id="explanation-box-${idx}"></div>
+            </div>
+        </div>`;
+    }).join('');
+
+    document.getElementById('reviewQuestionsContainer').innerHTML = cardsHtml;
+
+    // Show review section
+    const reviewEl = document.getElementById('diagnosticReview');
+    reviewEl.style.display = 'block';
+    reviewEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+/**
+ * Called when a student clicks "Explain the correct answer" on a review card.
+ * Calls the backend AI proxy, caches the result, renders it in the card.
+ */
+async function explainAnswer(questionIndex) {
+    const cacheKey = questionIndex;
+    const btn = document.getElementById(`explain-btn-${questionIndex}`);
+    const box = document.getElementById(`explanation-box-${questionIndex}`);
+
+    // Use cached explanation if already fetched
+    if (_explanationCache[cacheKey]) {
+        box.innerHTML = `
+            <div class="explanation-box">
+                <div class="explain-label">AI Explanation</div>
+                ${_explanationCache[cacheKey]}
+            </div>`;
+        btn.style.display = 'none';
+        return;
+    }
+
+    // Loading state
+    btn.disabled = true;
+    btn.innerHTML = `<span class="btn-spinner"></span> Generating…`;
+
+    const q = diagnosticQuestions[questionIndex];
+    if (!q) {
+        btn.disabled = false;
+        btn.innerHTML = '✨ Explain the correct answer';
+        return;
+    }
+
+    // Build answer maps from DOM (review-card still holds the original question data)
+    const studentText = q._reviewStudentAnswer || btn.closest('.review-card-body')
+        .querySelector('.answer-pill:first-child')?.textContent?.trim().replace(/^[✓✗]\s*/, '') || '';
+    const correctText = _resolveCorrectAnswer(q);
+
+    // Determine if the student was correct by checking card class
+    const card = document.getElementById(`review-card-${questionIndex}`);
+    const isCorrect = card?.classList.contains('correct') ?? false;
+
+    try {
+        const data = await api.explainAnswer({
+            concept_name: q.concept_name || 'Computer Science',
+            question_text: q.question,
+            exercise_type: q.input_type === 'text' ? 'short_answer' : 'mcq',
+            student_answer: studentText,
+            correct_answer: correctText,
+            is_correct: isCorrect
+        });
+
+        _explanationCache[cacheKey] = data.explanation;
+
+        box.innerHTML = `
+            <div class="explanation-box">
+                <div class="explain-label">AI Explanation</div>
+                ${data.explanation}
+            </div>`;
+        btn.style.display = 'none';
+
+    } catch (err) {
+        box.innerHTML = `
+            <div class="explanation-box explanation-error">
+                Could not load explanation: ${err.message}
+            </div>`;
+        btn.disabled = false;
+        btn.innerHTML = '✨ Explain the correct answer';
+    }
+}

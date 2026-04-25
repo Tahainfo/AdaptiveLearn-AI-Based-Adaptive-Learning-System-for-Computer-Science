@@ -8,6 +8,31 @@
 </head>
 <body>
     <div id="adminApp">
+        <!-- Login Page -->
+        <div id="loginPage" class="login-page">
+            <div class="login-container">
+                <div class="login-box">
+                    <h1>🎓 AdaptiveLearn Admin</h1>
+                    <h2>Admin Login</h2>
+                    <form onsubmit="handleAdminLogin(event)">
+                        <div class="form-group">
+                            <label for="adminUsername">Username:</label>
+                            <input type="text" id="adminUsername" placeholder="Enter your username" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="adminPassword">Password:</label>
+                            <input type="password" id="adminPassword" placeholder="Enter your password" required>
+                        </div>
+                        <button type="submit" class="btn btn-login">Login</button>
+                        <p id="loginError" class="error-message" style="display: none;"></p>
+                    </form>
+                    <p class="login-footer">For admin access, contact system administrator</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Dashboard (Hidden until logged in) -->
+        <div id="dashboardArea" style="display: none;">
         <!-- Navigation -->
         <nav class="admin-navbar">
             <div class="nav-container">
@@ -199,6 +224,52 @@
                     </div>
                 </div>
 
+                <!-- Edit Exercise Modal -->
+                <div id="editExerciseForm" class="form-modal" style="display:none;">
+                    <div class="form-content large">
+                        <h2>Edit Exercise</h2>
+                        <form onsubmit="handleEditExercise(event)">
+                            <input type="hidden" id="editExId">
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label>Title *</label>
+                                    <input type="text" id="editExTitle" required>
+                                </div>
+                                <div class="form-group">
+                                    <label>Difficulty *</label>
+                                    <select id="editExDifficulty" required>
+                                        <option value="easy">Easy</option>
+                                        <option value="medium">Medium</option>
+                                        <option value="challenging">Challenging</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label>Error Type Targeted</label>
+                                    <select id="editExErrorType">
+                                        <option value="">None (General)</option>
+                                        <option value="conceptual">Conceptual Errors</option>
+                                        <option value="procedural">Procedural Errors</option>
+                                        <option value="careless">Careless Errors</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label>
+                                        <input type="checkbox" id="editExDiagnostic"> Is Diagnostic?
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label>Content JSON</label>
+                                <textarea id="editExContentJson" rows="6" style="font-family:monospace;font-size:0.85rem;"></textarea>
+                            </div>
+                            <button type="submit" class="btn btn-success">Save Changes</button>
+                            <button type="button" class="btn btn-secondary" onclick="hideEditExerciseForm()">Cancel</button>
+                        </form>
+                    </div>
+                </div>
+
                 <!-- Exercises Table -->
                 <div class="table-responsive">
                     <table class="data-table">
@@ -206,6 +277,7 @@
                             <tr>
                                 <th>ID</th>
                                 <th>Title</th>
+                                <th>Concept</th>
                                 <th>Type</th>
                                 <th>Difficulty</th>
                                 <th>Diagnostic</th>
@@ -297,6 +369,7 @@
                     </table>
                 </div>
             </div>
+        </div>
         </div>
     </div>
 

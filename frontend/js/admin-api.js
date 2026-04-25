@@ -8,6 +8,43 @@ const adminAPI = {
     token: localStorage.getItem('adminToken'),
 
     // =================================================================
+    // AUTHENTICATION
+    // =================================================================
+
+    async login(username, password) {
+        const response = await fetch('/auth/login', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ username, password })
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail || 'Login failed');
+        }
+
+        const data = await response.json();
+
+        // Check if user is admin using the role field from the login response
+        if (data.role !== 'admin') {
+            throw new Error('You must have admin role to access this page');
+        }
+
+        // Store token
+        this.token = data.access_token;
+        localStorage.setItem('adminToken', data.access_token);
+        
+        return data;
+    },
+
+    logout() {
+        this.token = null;
+        localStorage.removeItem('adminToken');
+    },
+
+    // =================================================================
     // STUDENT MANAGEMENT
     // =================================================================
 
@@ -196,6 +233,19 @@ const adminAPI = {
         return await response.json();
     },
 
+    async deleteExercise(exerciseId) {
+        const response = await fetch(
+            `${this.baseURL}/exercises/${exerciseId}`,
+            {
+                method: 'DELETE',
+                headers: { 'Authorization': `Bearer ${this.token}` }
+            }
+        );
+
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
     // =================================================================
     // ANALYTICS & LOGS
     // =================================================================
@@ -235,29 +285,11 @@ const adminAPI = {
     // =================================================================
 
     async getAllConcepts() {
-        const response = await fetch('/curriculum/modules', {
+        const response = await fetch(`${this.baseURL}/concepts`, {
             headers: { 'Authorization': `Bearer ${this.token}` }
         });
 
         if (!response.ok) throw new Error(await response.text());
-        
-        const modules = await response.json();
-        const concepts = [];
-        
-        for (const module of modules) {
-            for (const sequence of module.sequences) {
-                for (const concept of sequence.concepts) {
-                    concepts.push({
-                        id: concept.id,
-                        name: concept.name,
-                        domain: concept.domain,
-                        module_id: module.id,
-                        sequence_id: sequence.id
-                    });
-                }
-            }
-        }
-        
-        return concepts;
+        return await response.json();
     }
 };

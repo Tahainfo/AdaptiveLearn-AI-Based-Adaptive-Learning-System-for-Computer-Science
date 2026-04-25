@@ -325,6 +325,54 @@ async def delete_student(
         conn.close()
 
 # =============================================================================
+# CURRICULUM ENDPOINTS (admin view — no mastery data)
+# =============================================================================
+
+@router.get("/concepts")
+async def get_all_concepts_for_admin(
+    admin_id: int = Depends(require_admin)
+):
+    """
+    Return all concepts with their sequence and module context.
+    Used by the admin exercise creation form.
+    No mastery data — admin-only, lightweight.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        SELECT
+            c.id          AS concept_id,
+            c.name        AS concept_name,
+            c.domain      AS concept_domain,
+            s.id          AS sequence_id,
+            s.title       AS sequence_title,
+            m.id          AS module_id,
+            m.title       AS module_title
+        FROM concepts c
+        JOIN sequences s ON s.id = c.sequence_id
+        JOIN modules   m ON m.id = s.module_id
+        ORDER BY m.order_index, s.order_index, c.id
+    """)
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    return [
+        {
+            "id":             row[0],
+            "name":           row[1],
+            "domain":         row[2],
+            "sequence_id":    row[3],
+            "sequence_title": row[4],
+            "module_id":      row[5],
+            "module_title":   row[6],
+        }
+        for row in rows
+    ]
+
+
+# =============================================================================
 # EXERCISE MANAGEMENT ENDPOINTS
 # =============================================================================
 
@@ -400,42 +448,47 @@ async def get_exercise(
     """Get exercise details"""
     conn = get_db_connection()
     cursor = conn.cursor()
-    
+
     cursor.execute("""
-        SELECT id, title, description, concept_id, difficulty, exercise_type,
-               is_diagnostic, error_type_targeted, content_json, explanation,
-               created_by_admin_id, is_active, created_at
-        FROM exercises WHERE id = ?
+        SELECT e.id, e.title, e.description, e.concept_id, e.difficulty,
+               e.exercise_type, e.is_diagnostic, e.error_type_targeted,
+               e.content_json, e.explanation, e.created_by_admin_id,
+               e.is_active, e.created_at,
+               s.id AS sequence_id, m.id AS module_id
+        FROM exercises e
+        LEFT JOIN concepts c  ON c.id = e.concept_id
+        LEFT JOIN sequences s ON s.id = c.sequence_id
+        LEFT JOIN modules   m ON m.id = s.module_id
+        WHERE e.id = ?
     """, (exercise_id,))
-    
+
     exercise = cursor.fetchone()
+    conn.close()
+
     if not exercise:
-        conn.close()
         raise HTTPException(status_code=404, detail="Exercise not found")
-    
-    conn.close()
-    
-    # Get stats
+
     stats = get_exercise_stats(exercise_id)
-    
-    # Get concept info
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT sequence_id FROM concepts WHERE id = ?", (exercise[3],))
-    concept_result = cursor.fetchone()
-    conn.close()
-    
+
+    content = None
+    if exercise[8]:
+        try:
+            content = json.loads(exercise[8])
+        except (json.JSONDecodeError, TypeError):
+            pass
+
     return AdminExerciseResponse(
         id=exercise[0],
         title=exercise[1],
         description=exercise[2],
-        module_id=0,  # Need to fetch from concept->sequence->module
-        sequence_id=concept_result[0] if concept_result else 0,
+        module_id=exercise[14] or 0,
+        sequence_id=exercise[13] or 0,
         concept_id=exercise[3],
         difficulty=exercise[4],
         exercise_type=exercise[5],
         is_diagnostic=bool(exercise[6]),
         error_type_targeted=exercise[7],
+        content_json=content,
         is_active=bool(exercise[11]),
         created_by_admin_id=exercise[10],
         created_at=exercise[12],
@@ -455,27 +508,33 @@ async def list_exercises(
     """List exercises with filters"""
     conn = get_db_connection()
     cursor = conn.cursor()
-    
-    query = "SELECT id, title, exercise_type, difficulty, is_diagnostic, is_active, created_by_admin_id FROM exercises WHERE 1=1"
+
+    base = """
+        SELECT e.id, e.title, e.exercise_type, e.difficulty,
+               e.is_diagnostic, e.is_active, e.created_by_admin_id,
+               e.error_type_targeted, c.name AS concept_name
+        FROM exercises e
+        LEFT JOIN concepts c ON c.id = e.concept_id
+        WHERE 1=1
+    """
     params = []
-    
+
     if concept_id:
-        query += " AND concept_id = ?"
+        base += " AND e.concept_id = ?"
         params.append(concept_id)
     if exercise_type:
-        query += " AND exercise_type = ?"
+        base += " AND e.exercise_type = ?"
         params.append(exercise_type)
     if is_diagnostic is not None:
-        query += " AND is_diagnostic = ?"
+        base += " AND e.is_diagnostic = ?"
         params.append(1 if is_diagnostic else 0)
-    
-    query += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
+
+    base += " ORDER BY e.created_at DESC LIMIT ? OFFSET ?"
     params.extend([limit, skip])
-    
-    cursor.execute(query, params)
+
+    cursor.execute(base, params)
     exercises = cursor.fetchall()
-    
-    # Get total count
+
     count_query = "SELECT COUNT(*) FROM exercises WHERE 1=1"
     count_params = []
     if concept_id:
@@ -487,12 +546,11 @@ async def list_exercises(
     if is_diagnostic is not None:
         count_query += " AND is_diagnostic = ?"
         count_params.append(1 if is_diagnostic else 0)
-    
+
     cursor.execute(count_query, count_params)
     total = cursor.fetchone()[0]
-    
     conn.close()
-    
+
     return {
         "total": total,
         "skip": skip,
@@ -505,7 +563,9 @@ async def list_exercises(
                 "difficulty": e[3],
                 "is_diagnostic": bool(e[4]),
                 "is_active": bool(e[5]),
-                "created_by_admin_id": e[6]
+                "created_by_admin_id": e[6],
+                "error_type_targeted": e[7],
+                "concept_name": e[8] or "—",
             }
             for e in exercises
         ]
@@ -613,19 +673,58 @@ async def deactivate_exercise(
     """Deactivate an exercise"""
     conn = get_db_connection()
     cursor = conn.cursor()
-    
+
     cursor.execute("UPDATE exercises SET is_active = 0 WHERE id = ?", (exercise_id,))
     conn.commit()
     conn.close()
-    
+
     log_admin_action(
         admin_id=admin_id,
         action_type="deactivate_exercise",
         entity="exercise",
         entity_id=exercise_id
     )
-    
+
     return {"message": "Exercise deactivated"}
+
+
+@router.delete("/exercises/{exercise_id}")
+async def delete_exercise(
+    exercise_id: int,
+    admin_id: int = Depends(require_admin)
+):
+    """Permanently delete an exercise and all related attempt records."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT id, title FROM exercises WHERE id = ?", (exercise_id,))
+    row = cursor.fetchone()
+    if not row:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Exercise not found")
+
+    title = row[1]
+
+    try:
+        cursor.execute("DELETE FROM exercise_attempts WHERE exercise_id = ?", (exercise_id,))
+        cursor.execute("DELETE FROM exercises WHERE id = ?", (exercise_id,))
+        conn.commit()
+
+        log_admin_action(
+            admin_id=admin_id,
+            action_type="delete_exercise",
+            entity="exercise",
+            entity_id=exercise_id,
+            details={"title": title}
+        )
+
+        return {"message": "Exercise deleted successfully"}
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        conn.close()
+
 
 # =============================================================================
 # ADMIN LOGS & ANALYTICS
