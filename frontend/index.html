@@ -171,6 +171,33 @@
                 <div id="diagnosticReview" style="display:none;" class="diagnostic-section">
                     <div id="reviewScoreBanner" class="review-score-banner"></div>
                     <div id="reviewQuestionsContainer" class="review-questions"></div>
+
+                    <!-- AI Learning Guide -->
+                    <div id="learningGuide" class="learning-guide-section" style="display:none;">
+                        <div class="lg-header">
+                            <div class="lg-header-icon">📚</div>
+                            <div>
+                                <h2 class="lg-title">What to Learn From This Test</h2>
+                                <p class="lg-subtitle">Personalised AI analysis based on your performance</p>
+                            </div>
+                        </div>
+                        <div id="learningGuideContent"></div>
+                    </div>
+
+                    <!-- Skeleton loader shown while AI is generating -->
+                    <div id="learningGuideSkeleton" class="lg-skeleton-wrap" style="display:none;">
+                        <div class="lg-skeleton-header"></div>
+                        <div class="lg-skeleton-line wide"></div>
+                        <div class="lg-skeleton-line medium"></div>
+                        <div class="lg-skeleton-chips">
+                            <div class="lg-skeleton-chip"></div>
+                            <div class="lg-skeleton-chip"></div>
+                            <div class="lg-skeleton-chip"></div>
+                        </div>
+                        <div class="lg-skeleton-line wide"></div>
+                        <div class="lg-skeleton-line narrow"></div>
+                    </div>
+
                     <div class="review-actions">
                         <button onclick="retakeDiagnostic()" class="btn-secondary">Retake Test</button>
                         <button onclick="navigateTo('dashboard')" class="btn-primary">Back to Dashboard</button>

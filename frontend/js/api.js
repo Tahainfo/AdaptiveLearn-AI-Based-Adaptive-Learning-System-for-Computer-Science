@@ -161,6 +161,10 @@ class API {
     async explainAnswer(payload) {
         return this.request('POST', '/ai/explain', payload);
     }
+
+    async getLearningGuide(payload) {
+        return this.request('POST', '/ai/learning-guide', payload);
+    }
 }
 
 const api = new API();

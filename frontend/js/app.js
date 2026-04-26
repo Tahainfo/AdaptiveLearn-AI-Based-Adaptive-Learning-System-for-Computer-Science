@@ -1106,6 +1106,9 @@ function showDiagnosticReview(questions, answers, results) {
     const reviewEl = document.getElementById('diagnosticReview');
     reviewEl.style.display = 'block';
     reviewEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+    // Auto-generate the learning guide (async, non-blocking)
+    _fetchAndRenderLearningGuide(questions, answers, conceptLabel);
 }
 
 /**
@@ -1175,4 +1178,148 @@ async function explainAnswer(questionIndex) {
         btn.disabled = false;
         btn.innerHTML = '✨ Explain the correct answer';
     }
+}
+
+// =================================================================
+// LEARNING GUIDE  ("What to Learn From This Test")
+// =================================================================
+
+async function _fetchAndRenderLearningGuide(questions, answers, testTitle) {
+    const skeleton = document.getElementById('learningGuideSkeleton');
+    const guideEl  = document.getElementById('learningGuide');
+    const contentEl = document.getElementById('learningGuideContent');
+
+    if (!skeleton || !guideEl || !contentEl) return;
+
+    // Show skeleton while loading
+    skeleton.style.display = 'block';
+    guideEl.style.display  = 'none';
+
+    // Build payload: one entry per question
+    const answerMap = {};
+    answers.forEach(a => { answerMap[a.question_id] = a; });
+
+    const questionResults = questions.map(q => {
+        const answer  = answerMap[q.id] || {};
+        const correct = _isAnswerCorrect(q, answer);
+        return {
+            question:       q.question,
+            student_answer: _resolveStudentAnswer(q, answer),
+            correct_answer: _resolveCorrectAnswer(q),
+            is_correct:     correct,
+            concept_name:   q.concept_name || ''
+        };
+    });
+
+    try {
+        const guide = await api.getLearningGuide({
+            test_title:  testTitle || 'Diagnostic Test',
+            questions:   questionResults
+        });
+
+        contentEl.innerHTML = _buildGuideHTML(guide);
+
+        skeleton.style.display = 'none';
+        guideEl.style.display  = 'block';
+
+    } catch (err) {
+        skeleton.style.display = 'none';
+        // Show a quiet fallback — don't block the review page
+        guideEl.style.display  = 'block';
+        contentEl.innerHTML = `
+            <div style="padding:1.5rem 2rem; color:#64748b; font-size:0.9rem; text-align:center;">
+                ⚠️ Could not generate learning guide right now — ${err.message}<br>
+                <button onclick="_retryLearningGuide()" style="margin-top:0.75rem;padding:0.4rem 1rem;
+                    border:1.5px solid #6366f1;border-radius:6px;color:#6366f1;background:none;cursor:pointer;font-size:0.85rem;">
+                    Try again
+                </button>
+            </div>`;
+        // store for retry
+        window._lastGuideArgs = [questions, answers, testTitle];
+    }
+}
+
+function _retryLearningGuide() {
+    const args = window._lastGuideArgs;
+    if (args) _fetchAndRenderLearningGuide(...args);
+}
+
+function _buildGuideHTML(guide) {
+    const sections = [];
+
+    /* ── 1. Summary ── */
+    if (guide.summary) {
+        sections.push(`
+        <div>
+            <p class="lg-block-title">📊 Your Performance</p>
+            <div class="lg-summary">${_esc(guide.summary)}</div>
+        </div>`);
+    }
+
+    /* ── 2. Weak areas ── */
+    if (guide.weak_areas && guide.weak_areas.length) {
+        const chips = guide.weak_areas.map(w => `
+            <div class="lg-chip">
+                <div class="lg-chip-concept">⚠️ ${_esc(w.concept)}</div>
+                <div class="lg-chip-gap">${_esc(w.gap)}</div>
+            </div>`).join('');
+
+        sections.push(`
+        <div>
+            <p class="lg-block-title">🎯 Areas to Focus On</p>
+            <div class="lg-chips">${chips}</div>
+        </div>`);
+    }
+
+    /* ── 3. Key lessons ── */
+    if (guide.key_lessons && guide.key_lessons.length) {
+        const lessons = guide.key_lessons.map((l, i) => `
+            <div class="lg-lesson">
+                <div class="lg-lesson-num">${i + 1}</div>
+                <div class="lg-lesson-body">
+                    <p class="lg-lesson-title">${_esc(l.title)}</p>
+                    <p class="lg-lesson-content">${_esc(l.content)}</p>
+                    ${l.tip ? `<span class="lg-lesson-tip">${_esc(l.tip)}</span>` : ''}
+                </div>
+            </div>`).join('');
+
+        sections.push(`
+        <div>
+            <p class="lg-block-title">💡 Key Lessons</p>
+            <div class="lg-lessons">${lessons}</div>
+        </div>`);
+    }
+
+    /* ── 4. Action plan ── */
+    if (guide.action_plan && guide.action_plan.length) {
+        const items = guide.action_plan.map(s => `<li>${_esc(s)}</li>`).join('');
+        sections.push(`
+        <div>
+            <p class="lg-block-title">✅ Your Action Plan</p>
+            <ul class="lg-action-list">${items}</ul>
+        </div>`);
+    }
+
+    /* ── 5. Strengths ── */
+    if (guide.strengths) {
+        sections.push(`
+        <div>
+            <p class="lg-block-title">⭐ What You Did Well</p>
+            <div class="lg-strengths">
+                <span class="lg-strengths-icon">🌟</span>
+                <p class="lg-strengths-text">${_esc(guide.strengths)}</p>
+            </div>
+        </div>`);
+    }
+
+    return sections.join('');
+}
+
+/** Minimal HTML-escape to prevent XSS from AI output. */
+function _esc(str) {
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
 }
