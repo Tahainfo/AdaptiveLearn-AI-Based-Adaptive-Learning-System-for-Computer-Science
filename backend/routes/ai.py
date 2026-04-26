@@ -26,10 +26,15 @@ OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 # Ordered fallback list — all free tier, tested working.
 # Override the first choice via OPENROUTER_MODEL env var.
+#
+# ORDER MATTERS for JSON-heavy requests:
+#   - gpt-oss-20b and gemma-4 produce clean output with no thinking preamble.
+#   - Nemotron / other reasoning models output a chain-of-thought before JSON;
+#     they still work but need _extract_json to scan from the end.
 _DEFAULT_MODELS = [
-    "nvidia/nemotron-3-super-120b-a12b:free",  # 120B, 262K ctx — best quality
-    "google/gemma-4-31b-it:free",               # 31B Google model
-    "openai/gpt-oss-20b:free",                  # lightweight but reliable
+    "openai/gpt-oss-20b:free",                  # clean output, no thinking trace
+    "google/gemma-4-31b-it:free",               # 31B Google model, also clean
+    "nvidia/nemotron-3-super-120b-a12b:free",  # thinking model — needs more tokens
     "openrouter/auto",                           # last resort: OR auto-routes
 ]
 
@@ -198,18 +203,50 @@ Rules:
 
 
 def _extract_json(text: str) -> dict:
-    """Extract a JSON object from model output that may contain surrounding text."""
+    """
+    Extract a JSON object from model output that may contain surrounding text
+    (e.g. a chain-of-thought reasoning trace before the actual JSON).
+
+    Strategy: scan BACKWARDS from the last '}' to find its matching '{' using
+    a brace-depth counter.  This always picks up the final, complete JSON object
+    even when the model has written paragraphs of reasoning before it.
+    """
     import json, re
+
     text = text.strip()
+
     # Strip markdown code fences if present
-    text = re.sub(r'^```(?:json)?\s*', '', text, flags=re.MULTILINE)
-    text = re.sub(r'\s*```$', '', text, flags=re.MULTILINE)
-    # Find the outermost { ... }
-    start = text.find('{')
-    end   = text.rfind('}')
-    if start != -1 and end != -1 and end > start:
-        text = text[start:end + 1]
-    return json.loads(text)
+    text = re.sub(r'```(?:json)?', '', text)
+
+    # Fast path — try parsing the whole text first (clean models)
+    try:
+        return json.loads(text)
+    except (json.JSONDecodeError, ValueError):
+        pass
+
+    # Find the LAST closing brace
+    end = text.rfind('}')
+    if end == -1:
+        raise ValueError("No closing brace '}' found in model output")
+
+    # Walk backwards to find the matching opening brace
+    depth = 0
+    start = -1
+    for i in range(end, -1, -1):
+        ch = text[i]
+        if ch == '}':
+            depth += 1
+        elif ch == '{':
+            depth -= 1
+            if depth == 0:
+                start = i
+                break
+
+    if start == -1:
+        raise ValueError("Could not find matching opening brace '{' in model output")
+
+    candidate = text[start:end + 1]
+    return json.loads(candidate)
 
 
 async def _call_openrouter(prompt: str, max_tokens: int, api_key: str) -> str:
@@ -222,7 +259,7 @@ async def _call_openrouter(prompt: str, max_tokens: int, api_key: str) -> str:
     }
     last_error = "All models unavailable — please try again later."
 
-    async with httpx.AsyncClient(timeout=40.0) as client:
+    async with httpx.AsyncClient(timeout=60.0) as client:
         for model in _model_list():
             payload = {
                 "model": model,
@@ -283,7 +320,7 @@ async def get_learning_guide(
         raise HTTPException(status_code=400, detail="No questions provided.")
 
     prompt = _build_guide_prompt(body)
-    raw = await _call_openrouter(prompt, max_tokens=900, api_key=api_key)
+    raw = await _call_openrouter(prompt, max_tokens=2000, api_key=api_key)
 
     try:
         data = _extract_json(raw)
