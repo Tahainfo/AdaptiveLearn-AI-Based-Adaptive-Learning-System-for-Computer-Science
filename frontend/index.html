@@ -177,8 +177,8 @@
                         <div class="lg-header">
                             <div class="lg-header-icon">📚</div>
                             <div>
-                                <h2 class="lg-title">What to Learn From This Test</h2>
-                                <p class="lg-subtitle">Personalised AI analysis based on your performance</p>
+                                <h2 class="lg-title">Ce que tu dois apprendre de ce test</h2>
+                                <p class="lg-subtitle">Analyse IA personnalisée basée sur tes résultats</p>
                             </div>
                         </div>
                         <div id="learningGuideContent"></div>
@@ -200,8 +200,27 @@
 
                     <div class="review-actions">
                         <button onclick="retakeDiagnostic()" class="btn-secondary">Retake Test</button>
+                        <button id="correctivesBtn" onclick="startCorrectiveExercises()" class="btn-correctives" style="display:none;">🎯 Exercices correctifs</button>
                         <button onclick="navigateTo('dashboard')" class="btn-primary">Back to Dashboard</button>
                     </div>
+                </div>
+
+                <!-- Corrective Exercises Section -->
+                <div id="correctiveExercisesSection" class="diagnostic-section corrective-section" style="display:none;">
+                    <div class="ce-header">
+                        <div class="ce-header-text">
+                            <h2 class="ce-title">🎯 Exercices correctifs</h2>
+                            <p class="ce-subtitle">Exercices ciblés basés sur tes erreurs</p>
+                        </div>
+                        <div class="ce-progress-wrap">
+                            <span id="ceProgressLabel" class="ce-progress-label">1 / 5</span>
+                            <div class="ce-progress-bar">
+                                <div id="ceProgressFill" class="ce-progress-fill"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="ceExerciseCard" class="ce-exercise-card"></div>
+                    <div id="ceEndScreen" class="ce-end-screen" style="display:none;"></div>
                 </div>
             </div>
 

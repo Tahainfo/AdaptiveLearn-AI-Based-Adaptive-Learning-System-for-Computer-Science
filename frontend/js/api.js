@@ -165,6 +165,10 @@ class API {
     async getLearningGuide(payload) {
         return this.request('POST', '/ai/learning-guide', payload);
     }
+
+    async getCorrectiveExercises(payload) {
+        return this.request('POST', '/ai/corrective-exercises', payload);
+    }
 }
 
 const api = new API();

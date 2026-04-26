@@ -111,7 +111,7 @@ async def explain_answer(
         )
 
     prompt = _build_prompt(body)
-    explanation = await _call_openrouter(prompt, max_tokens=300, api_key=api_key)
+    explanation = await _call_openrouter(prompt, max_tokens=300, api_key=api_key, _caller="explain")
     return ExplainResponse(explanation=explanation)
 
 
@@ -169,37 +169,39 @@ def _build_guide_prompt(req: LearningGuideRequest) -> str:
         for q in right
     ) or "  (none)"
 
-    return f"""You are an expert computer-science educator creating a personalized study guide.
+    return f"""Tu es un professeur expert en informatique. Tu rédiges un guide d'apprentissage personnalisé pour un élève.
 
-A student just completed a diagnostic test on: {req.test_title}
-Score: {len(right)}/{total} ({score_pct}%)
+L'élève vient de terminer un test de diagnostic sur : {req.test_title}
+Score : {len(right)}/{total} ({score_pct}%)
 
-INCORRECT answers ({len(wrong)}):
+Réponses INCORRECTES ({len(wrong)}) :
 {wrong_block}
 
-CORRECT answers ({len(right)}):
+Réponses CORRECTES ({len(right)}) :
 {right_block}
 
-Produce a JSON object — no extra text, no markdown fences — matching EXACTLY this schema:
+Génère un objet JSON — sans texte supplémentaire, sans balises markdown — correspondant EXACTEMENT à ce schéma :
 {{
-  "summary": "<2-3 sentence honest but encouraging overall assessment>",
+  "summary": "<2-3 phrases d'évaluation honnête et encourageante, en s'adressant directement à l'élève avec 'tu'>",
   "weak_areas": [
-    {{"concept": "<short concept name>", "gap": "<1 sentence: the specific knowledge gap revealed>"}}
+    {{"concept": "<nom court du concept>", "gap": "<1 phrase décrivant la lacune spécifique révélée, en utilisant 'tu'>"}}
   ],
   "key_lessons": [
-    {{"title": "<short lesson title>", "content": "<2-3 sentence explanation of the concept>", "tip": "<1 short memory trick or practical tip>"}}
+    {{"title": "<titre court de la leçon>", "content": "<explication du concept en 2-3 phrases, en utilisant 'tu'>", "tip": "<1 astuce mémo ou conseil pratique>"}}
   ],
-  "action_plan": ["<specific actionable step>", ...],
-  "strengths": "<1-2 sentences on what the student clearly understands>"
+  "action_plan": ["<étape concrète et actionnable, formulée avec 'tu'>", ...],
+  "strengths": "<1-2 phrases sur ce que l'élève maîtrise clairement, en utilisant 'tu'>"
 }}
 
-Rules:
-- weak_areas: one entry per DISTINCT gap (max 5). If perfect score, list areas to deepen.
-- key_lessons: 3-5 lessons, each teaching something the wrong answers reveal.
-- action_plan: 3-5 concrete steps (e.g. "Re-read Chapter 3 on pointers", "Practice 5 stack problems").
-- strengths: always find something positive, even with 0% score.
-- Keep language clear for a high-school / early-university student.
-- Output ONLY the JSON object, nothing else."""
+Règles STRICTES :
+- Toutes les valeurs textuelles doivent être rédigées EN FRANÇAIS.
+- S'adresser TOUJOURS à l'élève directement avec "tu" (jamais "l'élève" ni "the student").
+- weak_areas : une entrée par lacune DISTINCTE (max 5). Si score parfait, lister les points à approfondir.
+- key_lessons : 3 à 5 leçons, chacune enseignant quelque chose révélé par les mauvaises réponses.
+- action_plan : 3 à 5 étapes concrètes (ex : "Relis le chapitre sur les variables", "Fais 5 exercices sur les boucles").
+- strengths : toujours trouver quelque chose de positif, même avec un score de 0%.
+- Langue claire adaptée à un élève de lycée ou de première année universitaire.
+- Produire UNIQUEMENT l'objet JSON, rien d'autre."""
 
 
 def _extract_json(text: str) -> dict:
@@ -249,7 +251,8 @@ def _extract_json(text: str) -> dict:
     return json.loads(candidate)
 
 
-async def _call_openrouter(prompt: str, max_tokens: int, api_key: str) -> str:
+async def _call_openrouter(prompt: str, max_tokens: int, api_key: str,
+                          _caller: str = "") -> str:
     """Shared waterfall caller — returns raw content string."""
     or_headers = {
         "Authorization": f"Bearer {api_key}",
@@ -258,9 +261,11 @@ async def _call_openrouter(prompt: str, max_tokens: int, api_key: str) -> str:
         "X-Title": "AdaptiveLearn",
     }
     last_error = "All models unavailable — please try again later."
+    tag = f"[ai/{_caller}]" if _caller else "[ai]"
 
     async with httpx.AsyncClient(timeout=60.0) as client:
         for model in _model_list():
+            print(f"{tag} Trying model: {model}")
             payload = {
                 "model": model,
                 "messages": [{"role": "user", "content": prompt}],
@@ -271,16 +276,41 @@ async def _call_openrouter(prompt: str, max_tokens: int, api_key: str) -> str:
                 response = await client.post(OPENROUTER_API_URL, json=payload, headers=or_headers)
             except httpx.TimeoutException:
                 last_error = f"Model {model} timed out."
+                print(f"{tag} {last_error}")
                 continue
             except httpx.RequestError as exc:
                 raise HTTPException(status_code=502, detail=f"Could not reach AI service: {exc}")
 
+            print(f"{tag} HTTP {response.status_code} from {model}")
+
             if response.status_code == 200:
                 data = response.json()
                 try:
-                    return data["choices"][0]["message"]["content"].strip()
-                except (KeyError, IndexError):
-                    last_error = f"Unexpected response from {model}."
+                    content = data["choices"][0]["message"]["content"]
+                    finish  = data["choices"][0].get("finish_reason", "?")
+                    print(f"{tag} finish_reason={finish}  content={'<null>' if content is None else f'{len(content)} chars'}")
+
+                    if content is None:
+                        last_error = f"Model {model} returned null content (finish_reason={finish}). Trying next."
+                        print(f"{tag} {last_error}")
+                        continue
+
+                    if finish == "length":
+                        # Response was cut off — the JSON is incomplete and will
+                        # likely parse as a partial inner object.  Skip to a
+                        # model with a shorter output or no reasoning trace.
+                        last_error = (
+                            f"Model {model} hit token limit before completing the response "
+                            f"(finish_reason=length, {len(content)} chars). Trying next model."
+                        )
+                        print(f"{tag} {last_error}")
+                        continue
+
+                    print(f"{tag} Raw response (first 300 chars): {content[:300]!r}")
+                    return content.strip()
+                except (KeyError, IndexError, AttributeError) as exc:
+                    last_error = f"Unexpected response structure from {model}: {exc}  keys={list(data.keys())}"
+                    print(f"{tag} {last_error}")
                     continue
 
             try:
@@ -290,7 +320,7 @@ async def _call_openrouter(prompt: str, max_tokens: int, api_key: str) -> str:
 
             if _is_provider_rate_limit(err_body):
                 last_error = f"Model {model} is rate-limited upstream."
-                print(f"[ai] {last_error} Trying next model.")
+                print(f"{tag} {last_error} Trying next model.")
                 continue
 
             detail = (err_body.get("error") or {}).get("message", response.text)
@@ -320,13 +350,23 @@ async def get_learning_guide(
         raise HTTPException(status_code=400, detail="No questions provided.")
 
     prompt = _build_guide_prompt(body)
-    raw = await _call_openrouter(prompt, max_tokens=2000, api_key=api_key)
+    print(f"[ai/guide] Sending prompt ({len(prompt)} chars) for test: {body.test_title!r}")
+    raw = await _call_openrouter(prompt, max_tokens=4000, api_key=api_key, _caller="guide")
 
     try:
         data = _extract_json(raw)
     except (ValueError, _json.JSONDecodeError) as exc:
-        print(f"[ai] JSON parse failed: {exc}\nRaw:\n{raw[:500]}")
+        print(f"[ai/guide] JSON parse failed: {exc}\nRaw:\n{raw[:500]}")
         raise HTTPException(status_code=502, detail="AI returned malformed response. Please try again.")
+
+    # ── Diagnostic log — shows exactly what the model returned ──────────────
+    print(f"[ai/guide] Parsed JSON top-level keys: {list(data.keys())}")
+    print(f"[ai/guide]   summary      : {str(data.get('summary', '<missing>'))[:120]!r}")
+    print(f"[ai/guide]   weak_areas   : {len(data.get('weak_areas') or [])} items  → {data.get('weak_areas', '<missing>')!r}"[:200])
+    print(f"[ai/guide]   key_lessons  : {len(data.get('key_lessons') or [])} items")
+    print(f"[ai/guide]   action_plan  : {len(data.get('action_plan') or [])} items")
+    print(f"[ai/guide]   strengths    : {str(data.get('strengths', '<missing>'))[:120]!r}")
+    # ────────────────────────────────────────────────────────────────────────
 
     # Normalise & validate the parsed structure with safe defaults
     weak_areas = [
@@ -345,10 +385,120 @@ async def get_learning_guide(
     ]
     action_plan = [s for s in (data.get("action_plan") or []) if isinstance(s, str) and s.strip()]
 
-    return LearningGuideResponse(
+    result = LearningGuideResponse(
         summary=data.get("summary", ""),
         weak_areas=weak_areas,
         key_lessons=key_lessons,
         action_plan=action_plan,
         strengths=data.get("strengths", ""),
     )
+    print(f"[ai/guide] Final response — summary={'YES' if result.summary else 'EMPTY'}, "
+          f"weak_areas={len(result.weak_areas)}, key_lessons={len(result.key_lessons)}, "
+          f"action_plan={len(result.action_plan)}, strengths={'YES' if result.strengths else 'EMPTY'}")
+    return result
+
+
+# =============================================================================
+# CORRECTIVE EXERCISES  — POST /ai/corrective-exercises
+# =============================================================================
+
+class WrongQuestion(BaseModel):
+    concept: str
+    question: str
+    correct_answer: str
+
+
+class CorrectiveExercisesRequest(BaseModel):
+    test_title: str = "Diagnostic Test"
+    wrong_questions: list[WrongQuestion]
+
+
+class CorrectiveExercise(BaseModel):
+    question: str
+    options: list[str]
+    correct_index: int
+    explanation: str
+
+
+class CorrectiveExercisesResponse(BaseModel):
+    exercises: list[CorrectiveExercise]
+
+
+def _build_corrective_prompt(req: CorrectiveExercisesRequest) -> str:
+    blocks = "\n".join(
+        f'  - Concept : "{q.concept}" | Question d\'origine : "{q.question}" | Bonne réponse : "{q.correct_answer}"'
+        for q in req.wrong_questions
+    )
+    n = min(max(len(req.wrong_questions), 3), 5)
+
+    return f"""Tu es un professeur expert en informatique. Tu crées des exercices correctifs ciblés pour un élève.
+
+L'élève a raté les questions suivantes dans un test sur : {req.test_title}
+
+Questions ratées :
+{blocks}
+
+Génère exactement {n} exercices QCM (4 choix chacun) pour consolider les lacunes identifiées.
+
+Réponds UNIQUEMENT avec cet objet JSON (pas de markdown, pas de texte supplémentaire) :
+{{
+  "exercises": [
+    {{
+      "question": "<question pédagogique directe>",
+      "options": ["<choix A>", "<choix B>", "<choix C>", "<choix D>"],
+      "correct_index": <0|1|2|3>,
+      "explanation": "<1-2 phrases expliquant pourquoi c'est correct, en tutoyant l'élève>"
+    }}
+  ]
+}}
+
+Règles STRICTES :
+- Toutes les valeurs textuelles EN FRANÇAIS
+- Toujours tutoyer l'élève dans les explications ("tu")
+- correct_index = indice 0-3 de la bonne réponse dans options
+- Les 4 options doivent être plausibles et représentatives d'erreurs classiques
+- Chaque exercice cible UNE lacune identifiée ci-dessus
+- UNIQUEMENT le JSON, rien d'autre"""
+
+
+@router.post("/corrective-exercises", response_model=CorrectiveExercisesResponse)
+async def get_corrective_exercises(
+    body: CorrectiveExercisesRequest,
+    authorization: Optional[str] = Header(None),
+):
+    """Generate targeted MCQ corrective exercises based on the student's wrong answers."""
+    import json as _json
+
+    get_current_student(authorization)
+
+    api_key = os.getenv("OPENROUTER_API_KEY", "")
+    if not api_key:
+        raise HTTPException(status_code=503, detail="AI not configured.")
+
+    if not body.wrong_questions:
+        raise HTTPException(status_code=400, detail="No wrong questions provided.")
+
+    prompt = _build_corrective_prompt(body)
+    raw = await _call_openrouter(prompt, max_tokens=2000, api_key=api_key, _caller="corrective")
+
+    try:
+        data = _extract_json(raw)
+    except (ValueError, _json.JSONDecodeError) as exc:
+        print(f"[ai/corrective] JSON parse failed: {exc}\nRaw:\n{raw[:500]}")
+        raise HTTPException(status_code=502, detail="AI returned malformed response. Please try again.")
+
+    exercises = [
+        CorrectiveExercise(
+            question=e.get("question", ""),
+            options=list(e.get("options", [])),
+            correct_index=int(e.get("correct_index", 0)),
+            explanation=e.get("explanation", ""),
+        )
+        for e in (data.get("exercises") or [])
+        if e.get("question") and e.get("options") and len(e.get("options", [])) >= 2
+    ]
+
+    if not exercises:
+        raise HTTPException(status_code=502, detail="AI returned no exercises. Please try again.")
+
+    return CorrectiveExercisesResponse(exercises=exercises)

@@ -5,6 +5,14 @@ let currentDiagnosticConcept = null;
 let diagnosticQuestions = [];
 let hintLevel = 0;
 
+// Corrective exercises state
+let _correctiveExercises = [];
+let _correctiveIndex = 0;
+let _correctiveSelected = -1;
+let _correctiveResults = [];
+let _lastDiagnosticAnswers = null;
+let _lastTestTitle = '';
+
 // Initialize app
 document.addEventListener('DOMContentLoaded', () => {
     if (api.token) {
@@ -1022,11 +1030,19 @@ function _isAnswerCorrect(question, answer) {
  * @param {Object|Array} results - backend scoring result(s)
  */
 function showDiagnosticReview(questions, answers, results) {
-    // Hide all other diagnostic sections
-    ['diagnosticStep1', 'diagnosticStep2', 'diagnosticResults'].forEach(id => {
+    // Hide all other diagnostic sections (including any leftover corrective section)
+    ['diagnosticStep1', 'diagnosticStep2', 'diagnosticResults', 'correctiveExercisesSection'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.style.display = 'none';
     });
+
+    // Reset learning guide to blank loading state so it always re-fetches fresh
+    const _skeleton = document.getElementById('learningGuideSkeleton');
+    const _guide    = document.getElementById('learningGuide');
+    const _content  = document.getElementById('learningGuideContent');
+    if (_skeleton) _skeleton.style.display = 'none';
+    if (_guide)    _guide.style.display    = 'none';
+    if (_content)  _content.innerHTML      = '';
 
     // --- Score banner ---
     let totalCorrect = 0;
@@ -1059,6 +1075,19 @@ function showDiagnosticReview(questions, answers, results) {
                 <span class="score-label">Score</span>
             </div>
         </div>`;
+
+    // Store for corrective exercises
+    _lastDiagnosticAnswers = answers;
+    _lastTestTitle = conceptLabel || 'Diagnostic Test';
+
+    // Show corrective exercises button only when there are wrong answers
+    const correctivesBtn = document.getElementById('correctivesBtn');
+    if (correctivesBtn) {
+        const hasWrong = questions.some(q => !_isAnswerCorrect(q, answerMap[q.id] || {}));
+        correctivesBtn.style.display = hasWrong ? 'inline-flex' : 'none';
+        correctivesBtn.disabled = false;
+        correctivesBtn.innerHTML = '🎯 Exercices correctifs';
+    }
 
     // --- Question cards ---
     const cardsHtml = questions.map((q, idx) => {
@@ -1191,6 +1220,10 @@ async function _fetchAndRenderLearningGuide(questions, answers, testTitle) {
 
     if (!skeleton || !guideEl || !contentEl) return;
 
+    // Store args immediately so the retry button always works regardless of
+    // whether we end in the success path or the error path.
+    window._lastGuideArgs = [questions, answers, testTitle];
+
     // Show skeleton while loading
     skeleton.style.display = 'block';
     guideEl.style.display  = 'none';
@@ -1217,25 +1250,26 @@ async function _fetchAndRenderLearningGuide(questions, answers, testTitle) {
             questions:   questionResults
         });
 
-        contentEl.innerHTML = _buildGuideHTML(guide);
+        console.log('[LearningGuide] response from backend:', guide);
+
+        const html = _buildGuideHTML(guide);
+        contentEl.innerHTML = html;
 
         skeleton.style.display = 'none';
         guideEl.style.display  = 'block';
 
     } catch (err) {
+        console.error('[LearningGuide] fetch failed:', err);
         skeleton.style.display = 'none';
-        // Show a quiet fallback — don't block the review page
         guideEl.style.display  = 'block';
         contentEl.innerHTML = `
             <div style="padding:1.5rem 2rem; color:#64748b; font-size:0.9rem; text-align:center;">
-                ⚠️ Could not generate learning guide right now — ${err.message}<br>
+                ⚠️ Impossible de générer le guide pour l'instant — ${err.message}<br>
                 <button onclick="_retryLearningGuide()" style="margin-top:0.75rem;padding:0.4rem 1rem;
                     border:1.5px solid #6366f1;border-radius:6px;color:#6366f1;background:none;cursor:pointer;font-size:0.85rem;">
-                    Try again
+                    Réessayer
                 </button>
             </div>`;
-        // store for retry
-        window._lastGuideArgs = [questions, answers, testTitle];
     }
 }
 
@@ -1251,7 +1285,7 @@ function _buildGuideHTML(guide) {
     if (guide.summary) {
         sections.push(`
         <div>
-            <p class="lg-block-title">📊 Your Performance</p>
+            <p class="lg-block-title">📊 Ton bilan</p>
             <div class="lg-summary">${_esc(guide.summary)}</div>
         </div>`);
     }
@@ -1266,7 +1300,7 @@ function _buildGuideHTML(guide) {
 
         sections.push(`
         <div>
-            <p class="lg-block-title">🎯 Areas to Focus On</p>
+            <p class="lg-block-title">🎯 Points à renforcer</p>
             <div class="lg-chips">${chips}</div>
         </div>`);
     }
@@ -1285,7 +1319,7 @@ function _buildGuideHTML(guide) {
 
         sections.push(`
         <div>
-            <p class="lg-block-title">💡 Key Lessons</p>
+            <p class="lg-block-title">💡 Leçons essentielles</p>
             <div class="lg-lessons">${lessons}</div>
         </div>`);
     }
@@ -1295,7 +1329,7 @@ function _buildGuideHTML(guide) {
         const items = guide.action_plan.map(s => `<li>${_esc(s)}</li>`).join('');
         sections.push(`
         <div>
-            <p class="lg-block-title">✅ Your Action Plan</p>
+            <p class="lg-block-title">✅ Ton plan d'action</p>
             <ul class="lg-action-list">${items}</ul>
         </div>`);
     }
@@ -1304,12 +1338,25 @@ function _buildGuideHTML(guide) {
     if (guide.strengths) {
         sections.push(`
         <div>
-            <p class="lg-block-title">⭐ What You Did Well</p>
+            <p class="lg-block-title">⭐ Ce que tu maîtrises bien</p>
             <div class="lg-strengths">
                 <span class="lg-strengths-icon">🌟</span>
                 <p class="lg-strengths-text">${_esc(guide.strengths)}</p>
             </div>
         </div>`);
+    }
+
+    if (sections.length === 0) {
+        // AI returned an empty or unrecognised response — show a retry prompt
+        console.warn('[LearningGuide] guide object had no usable sections:', guide);
+        return `
+            <div style="padding:1.5rem 2rem; color:#64748b; font-size:0.9rem; text-align:center;">
+                ⚠️ Le guide n'a pas pu être généré correctement.<br>
+                <button onclick="_retryLearningGuide()" style="margin-top:0.75rem;padding:0.4rem 1rem;
+                    border:1.5px solid #6366f1;border-radius:6px;color:#6366f1;background:none;cursor:pointer;font-size:0.85rem;">
+                    Réessayer
+                </button>
+            </div>`;
     }
 
     return sections.join('');
@@ -1322,4 +1369,211 @@ function _esc(str) {
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;');
+}
+
+// =================================================================
+// CORRECTIVE EXERCISES
+// =================================================================
+
+async function startCorrectiveExercises() {
+    const btn = document.getElementById('correctivesBtn');
+    if (!btn || !diagnosticQuestions.length || !_lastDiagnosticAnswers) return;
+
+    // Collect wrong questions from last diagnostic session
+    const answerMap = {};
+    _lastDiagnosticAnswers.forEach(a => { answerMap[a.question_id] = a; });
+
+    const wrongQuestions = diagnosticQuestions
+        .filter(q => !_isAnswerCorrect(q, answerMap[q.id] || {}))
+        .map(q => ({
+            concept: q.concept_name || 'Informatique',
+            question: q.question,
+            correct_answer: _resolveCorrectAnswer(q)
+        }));
+
+    if (!wrongQuestions.length) return;
+
+    btn.disabled = true;
+    btn.innerHTML = '<span class="ce-btn-spinner"></span> Génération en cours…';
+
+    try {
+        const response = await api.getCorrectiveExercises({
+            test_title: _lastTestTitle || 'Diagnostic Test',
+            wrong_questions: wrongQuestions
+        });
+
+        _correctiveExercises = response.exercises || [];
+        _correctiveIndex = 0;
+        _correctiveResults = [];
+
+        // Hide review, show corrective section
+        document.getElementById('diagnosticReview').style.display = 'none';
+        const section = document.getElementById('correctiveExercisesSection');
+        section.style.display = 'block';
+        section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+        _renderCorrectiveExercise();
+
+    } catch (err) {
+        btn.disabled = false;
+        btn.innerHTML = '🎯 Exercices correctifs';
+        const errDiv = document.createElement('div');
+        errDiv.className = 'ce-toast-error';
+        errDiv.textContent = 'Impossible de générer les exercices : ' + err.message;
+        btn.parentElement.appendChild(errDiv);
+        setTimeout(() => errDiv.remove(), 5000);
+    }
+}
+
+function _renderCorrectiveExercise() {
+    const card = document.getElementById('ceExerciseCard');
+    const endScreen = document.getElementById('ceEndScreen');
+    const progressLabel = document.getElementById('ceProgressLabel');
+    const progressFill = document.getElementById('ceProgressFill');
+
+    card.style.display = 'block';
+    endScreen.style.display = 'none';
+    _correctiveSelected = -1;
+
+    const total = _correctiveExercises.length;
+    const i = _correctiveIndex;
+    const ex = _correctiveExercises[i];
+
+    progressLabel.textContent = `${i + 1} / ${total}`;
+    progressFill.style.width = `${((i + 1) / total) * 100}%`;
+
+    const optionsHtml = ex.options.map((opt, idx) => `
+        <button class="ce-option" id="ce-opt-${idx}" onclick="selectCorrectiveOption(${idx})">
+            <span class="ce-option-letter">${String.fromCharCode(65 + idx)}</span>
+            <span class="ce-option-text">${_esc(opt)}</span>
+        </button>`).join('');
+
+    card.innerHTML = `
+        <div class="ce-question-num">Question ${i + 1} sur ${total}</div>
+        <p class="ce-question-text">${_esc(ex.question)}</p>
+        <div class="ce-options" id="ceOptions">${optionsHtml}</div>
+        <div class="ce-actions">
+            <button class="ce-submit-btn" id="ceSubmitBtn" onclick="submitCorrectiveAnswer()" disabled>
+                Valider ma réponse
+            </button>
+        </div>
+        <div id="ceFeedback" class="ce-feedback" style="display:none;"></div>
+    `;
+}
+
+function selectCorrectiveOption(idx) {
+    if (_correctiveSelected >= 0) return; // already submitted
+    _correctiveSelected = idx;
+
+    document.querySelectorAll('.ce-option').forEach((btn, i) => {
+        btn.classList.toggle('selected', i === idx);
+    });
+
+    const submitBtn = document.getElementById('ceSubmitBtn');
+    if (submitBtn) submitBtn.disabled = false;
+}
+
+function submitCorrectiveAnswer() {
+    if (_correctiveSelected < 0) return;
+
+    const ex = _correctiveExercises[_correctiveIndex];
+    const isCorrect = _correctiveSelected === ex.correct_index;
+    _correctiveResults.push(isCorrect);
+
+    // Reveal correct / wrong option states
+    document.querySelectorAll('.ce-option').forEach((btn, i) => {
+        btn.disabled = true;
+        if (i === ex.correct_index) btn.classList.add('ce-correct');
+        else if (i === _correctiveSelected && !isCorrect) btn.classList.add('ce-wrong');
+    });
+
+    const submitBtn = document.getElementById('ceSubmitBtn');
+    if (submitBtn) submitBtn.style.display = 'none';
+
+    const isLast = _correctiveIndex >= _correctiveExercises.length - 1;
+    const nextLabel = isLast ? '📊 Voir mes résultats' : 'Exercice suivant →';
+    const nextFn   = isLast ? 'showCorrectiveEndScreen()' : 'nextCorrectiveExercise()';
+
+    const feedback = document.getElementById('ceFeedback');
+    feedback.innerHTML = `
+        <div class="ce-feedback-banner ${isCorrect ? 'ce-fb-correct' : 'ce-fb-wrong'}">
+            ${isCorrect ? '✓ Bonne réponse !' : '✗ Mauvaise réponse'}
+        </div>
+        <div class="ce-explanation">
+            <span class="ce-explanation-label">Explication</span>
+            ${_esc(ex.explanation)}
+        </div>
+        <button class="ce-next-btn" onclick="${nextFn}">${nextLabel}</button>
+    `;
+    feedback.style.display = 'block';
+}
+
+function nextCorrectiveExercise() {
+    _correctiveIndex++;
+    _renderCorrectiveExercise();
+    document.getElementById('correctiveExercisesSection')
+        .scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function showCorrectiveEndScreen() {
+    const card = document.getElementById('ceExerciseCard');
+    const endScreen = document.getElementById('ceEndScreen');
+    const progressFill = document.getElementById('ceProgressFill');
+
+    card.style.display = 'none';
+    progressFill.style.width = '100%';
+
+    const total   = _correctiveResults.length;
+    const correct = _correctiveResults.filter(Boolean).length;
+    const pct     = total ? Math.round((correct / total) * 100) : 0;
+    const color   = pct >= 80 ? '#22c55e' : pct >= 50 ? '#f59e0b' : '#ef4444';
+
+    const message = pct === 100
+        ? 'Parfait ! Tu as répondu correctement à tous les exercices. Continue comme ça !'
+        : pct >= 60
+            ? 'Bon travail ! Continue à pratiquer pour renforcer tes connaissances.'
+            : 'Continue tes efforts ! Relis les explications et retente le test de diagnostic.';
+
+    endScreen.innerHTML = `
+        <div class="ce-end-icon">🏁</div>
+        <h3 class="ce-end-title">Exercices terminés !</h3>
+        <div class="ce-end-score-wrap">
+            <div class="ce-end-score-circle" style="border-color:${color};">
+                <span class="ce-end-score-num" style="color:${color};">${pct}%</span>
+                <span class="ce-end-score-sub">${correct}/${total}</span>
+            </div>
+        </div>
+        <p class="ce-end-message">${_esc(message)}</p>
+        <div class="ce-end-actions">
+            <button class="btn-secondary ce-back-btn" onclick="backToReview()">← Retour à la révision</button>
+            <button class="ce-end-primary-btn" onclick="navigateTo('dashboard')">Tableau de bord</button>
+        </div>
+    `;
+    endScreen.style.display = 'block';
+    endScreen.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function backToReview() {
+    document.getElementById('correctiveExercisesSection').style.display = 'none';
+
+    // Reset the launch button so it's usable again
+    const btn = document.getElementById('correctivesBtn');
+    if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = '🎯 Exercices correctifs';
+    }
+
+    const review = document.getElementById('diagnosticReview');
+    review.style.display = 'block';
+    review.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+    // Re-fetch the learning guide if its content is empty (happens when the
+    // guide finished loading while the review was hidden and returned blank)
+    const contentEl = document.getElementById('learningGuideContent');
+    const guideEl   = document.getElementById('learningGuide');
+    const isEmpty   = !contentEl || contentEl.innerHTML.trim() === '' ||
+                      (guideEl && guideEl.style.display === 'none');
+    if (isEmpty && _lastDiagnosticAnswers && diagnosticQuestions.length) {
+        _fetchAndRenderLearningGuide(diagnosticQuestions, _lastDiagnosticAnswers, _lastTestTitle);
+    }
 }
